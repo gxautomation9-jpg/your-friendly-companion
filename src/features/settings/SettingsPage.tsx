@@ -15,6 +15,9 @@ const LOCAL_KEYS = ["astra:tasks-v1", "astra:memories-v2", "astra-voice-prefs-v1
 
 export function SettingsPage() {
   const { t, lang, setLang } = useI18n();
+  const [theme, setThemeState] = useState<AstraTheme>("blue");
+  useEffect(() => { setThemeState(loadTheme()); }, []);
+  const changeTheme = (v: AstraTheme) => { applyAstraTheme(v); setThemeState(v); };
 
   const exportData = () => {
     const out: Record<string, unknown> = {};
