@@ -5,13 +5,23 @@ import { useEffect, useState } from "react";
 export type VoicePrefs = {
   arVoiceURI: string | null;
   enVoiceURI: string | null;
+  // Gemini cloud voice IDs. When set, the player uses cloud TTS for that
+  // language instead of the device's SpeechSynthesis voices.
+  arCloudVoice: string | null;
+  enCloudVoice: string | null;
   preferFemale: boolean;
 };
 
 const STORAGE_KEY = "astra-voice-prefs-v1";
 const EVENT = "astra-voice-prefs-changed";
 
-const DEFAULT: VoicePrefs = { arVoiceURI: null, enVoiceURI: null, preferFemale: true };
+const DEFAULT: VoicePrefs = {
+  arVoiceURI: null,
+  enVoiceURI: null,
+  arCloudVoice: null,
+  enCloudVoice: null,
+  preferFemale: true,
+};
 
 export function loadVoicePrefs(): VoicePrefs {
   if (typeof window === "undefined") return DEFAULT;
