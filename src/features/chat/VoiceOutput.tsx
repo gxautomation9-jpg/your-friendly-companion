@@ -434,7 +434,7 @@ export function VoiceOutput({
 
       window.speechSynthesis.speak(utterance);
     },
-    [supported, voices, langPrefix, startKeepAlive, stopKeepAlive, recommendationFor, copy.voiceUnavailable],
+    [supported, voices, langPrefix, startKeepAlive, stopKeepAlive, recommendationFor, copy.voiceUnavailable, copy.recoSynthFailed, copy.recoNetwork],
   );
 
   const stop = useCallback(
@@ -449,6 +449,18 @@ export function VoiceOutput({
       setProgress(0);
       if (supported) {
         try { window.speechSynthesis.cancel(); } catch { /* noop */ }
+      }
+      if (cloudAbortRef.current) {
+        try { cloudAbortRef.current.abort(); } catch { /* noop */ }
+        cloudAbortRef.current = null;
+      }
+      if (cloudAudioRef.current) {
+        try { cloudAudioRef.current.pause(); } catch { /* noop */ }
+        cloudAudioRef.current = null;
+      }
+      if (cloudUrlRef.current) {
+        try { URL.revokeObjectURL(cloudUrlRef.current); } catch { /* noop */ }
+        cloudUrlRef.current = null;
       }
       if (!silent) setState("idle");
     },
