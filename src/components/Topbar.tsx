@@ -39,6 +39,15 @@ export function Topbar() {
           <Link to="/" hash="faq" className="hover:text-foreground transition">{t("faq")}</Link>
         </nav>
         <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            aria-label={theme === "blue" ? "Switch to purple mode" : "Switch to blue mode"}
+            title={theme === "blue" ? (lang === "ar" ? "تبديل إلى البنفسجي" : "Switch to purple") : (lang === "ar" ? "تبديل إلى الأزرق" : "Switch to blue")}
+          >
+            <Palette className={`h-4 w-4 ${theme === "purple" ? "text-electric" : ""}`} />
+          </Button>
           <Button variant="ghost" size="icon" onClick={() => setLang(lang === "en" ? "ar" : "en")} aria-label="Language">
             <Globe className="h-4 w-4" />
           </Button>
