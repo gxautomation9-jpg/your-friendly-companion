@@ -248,8 +248,8 @@ export function VoiceTestDialog({ appLang, trigger }: { appLang: "ar" | "en"; tr
   const Column = ({ title, children }: { title: React.ReactNode; children: React.ReactNode }) => (
     <section className="flex min-w-0 flex-col">
       <h3 className="mb-1.5 text-sm font-semibold">{title}</h3>
-      <div className="max-h-[40vh] min-h-[140px] overflow-y-auto overflow-x-hidden rounded-md border border-border/60 p-2 sm:max-h-72">
-        {children}
+      <div className="max-h-[40vh] min-h-[140px] overflow-y-auto overflow-x-auto rounded-md border border-border/60 p-2 sm:max-h-72">
+        <div className="min-w-max sm:min-w-0">{children}</div>
       </div>
     </section>
   );
