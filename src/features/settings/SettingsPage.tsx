@@ -5,6 +5,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { Download, Trash2, ShieldCheck } from "lucide-react";
 import { Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { loadTheme, setTheme as applyAstraTheme, type AstraTheme } from "@/lib/theme";
 
 // Session-only keys (legacy + ephemeral chat state).
 const SESSION_KEYS = ["astra:session-chats", "astra:session-tasks", "astra:session-memories"];
