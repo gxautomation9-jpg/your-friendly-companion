@@ -113,6 +113,7 @@ export const Route = createFileRoute("/api/chat")({
             forcedLang?: "ar" | "en" | null;
             preferredLang?: "ar" | "en" | null;
             memory?: string | null;
+            tasks?: string | null;
           };
           try { body = JSON.parse(raw); } catch {
             return new Response("invalid json", { status: 400 });
@@ -142,9 +143,11 @@ export const Route = createFileRoute("/api/chat")({
             const dropped = messages.shift()!;
             total -= messageText(dropped).length;
           }
-          // Cap memory string.
+          // Cap memory + tasks strings.
           let memory = body.memory ?? null;
           if (memory && memory.length > MAX_MEMORY_CHARS) memory = memory.slice(0, MAX_MEMORY_CHARS);
+          let tasks = body.tasks ?? null;
+          if (tasks && tasks.length > MAX_MEMORY_CHARS) tasks = tasks.slice(0, MAX_MEMORY_CHARS);
 
           const chain = buildAvailableChain();
           if (chain.length === 0) {
@@ -153,7 +156,7 @@ export const Route = createFileRoute("/api/chat")({
             });
           }
 
-          const system = buildSystem(body.forcedLang ?? null, body.preferredLang ?? null, memory);
+          const system = buildSystem(body.forcedLang ?? null, body.preferredLang ?? null, memory, tasks);
           const modelMessages = await convertToModelMessages(messages);
 
           // Try providers in order using non-streaming generateText with maxRetries:0,
