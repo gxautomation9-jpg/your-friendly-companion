@@ -2,10 +2,19 @@ import { Link } from "@tanstack/react-router";
 import { AstraLogo } from "./AstraLogo";
 import { useI18n } from "@/lib/i18n";
 import { Button } from "./ui/button";
-import { Brain, CheckSquare, Globe, MessageSquare, Settings } from "lucide-react";
+import { Brain, CheckSquare, Globe, MessageSquare, Settings, Palette } from "lucide-react";
+import { useEffect, useState } from "react";
+import { loadTheme, setTheme as applyAstraTheme, type AstraTheme } from "@/lib/theme";
 
 export function Topbar() {
   const { lang, setLang, t } = useI18n();
+  const [theme, setThemeState] = useState<AstraTheme>("blue");
+  useEffect(() => { setThemeState(loadTheme()); }, []);
+  const toggleTheme = () => {
+    const next: AstraTheme = theme === "blue" ? "purple" : "blue";
+    applyAstraTheme(next);
+    setThemeState(next);
+  };
   const appLinks = [
     { to: "/chat", label: t("chat"), icon: MessageSquare },
     { to: "/tasks", label: t("tasks"), icon: CheckSquare },
