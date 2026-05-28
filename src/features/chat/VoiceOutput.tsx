@@ -493,6 +493,9 @@ export function VoiceOutput({
     // Chrome has a known race: speak() right after cancel() can swallow the
     // first utterance. Give the engine a tick to drain before queueing.
     try { window.speechSynthesis.cancel(); } catch { /* noop */ }
+    if (cloudAbortRef.current) { try { cloudAbortRef.current.abort(); } catch { /* noop */ } cloudAbortRef.current = null; }
+    if (cloudAudioRef.current) { try { cloudAudioRef.current.pause(); } catch { /* noop */ } cloudAudioRef.current = null; }
+    if (cloudUrlRef.current) { try { URL.revokeObjectURL(cloudUrlRef.current); } catch { /* noop */ } cloudUrlRef.current = null; }
     window.setTimeout(() => {
       if (token === playTokenRef.current) speakChunk(token);
     }, 120);
