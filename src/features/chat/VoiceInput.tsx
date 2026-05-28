@@ -255,17 +255,34 @@ export function VoiceInput({
     try {
       // CRITICAL: do NOT await anything before recognition.start() — any await
       // breaks the user-gesture chain and the mic silently fails on mobile.
+      // High-quality constraints help Astra hear the user clearly: mono input,
+      // 48 kHz when available, with browser DSP for echo / noise / gain.
+      const audioConstraints: MediaTrackConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1,
+        sampleRate: 48000,
+      };
       if (!isMobile) {
         // Desktop: open mic stream for real waveform analysis (fire-and-forget).
         if (!mediaStreamRef.current) {
           navigator.mediaDevices
-            .getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+            .getUserMedia({ audio: audioConstraints })
             .then((stream) => { if (recordingRef.current) startWaveform(stream); })
             .catch(() => { /* recognition.start will surface a permission error */ });
         }
       } else {
-        // Mobile: SpeechRecognition manages the mic itself. Show a synthetic
-        // pulse so the user sees the app is listening.
+        // Mobile: pre-warm the mic with optimal constraints so the OS picks
+        // the best input profile, then immediately release so the
+        // SpeechRecognition engine can take ownership without conflict.
+        navigator.mediaDevices
+          .getUserMedia({ audio: audioConstraints })
+          .then((stream) => {
+            stream.getTracks().forEach((t) => t.stop());
+          })
+          .catch(() => { /* recognition.start will surface a permission error */ });
+        // Synthetic pulse so the user sees the app is listening.
         startSyntheticWaveform();
       }
 
