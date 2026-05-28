@@ -513,6 +513,12 @@ export function VoiceOutput({
   const playOrResume = () => {
     if (!supported) return;
     if (state === "paused") {
+      // Resume cloud audio if it's the active source.
+      if (cloudAudioRef.current) {
+        cloudAudioRef.current.play().catch(() => undefined);
+        setState("playing");
+        return;
+      }
       // Chrome's speechSynthesis.resume() is unreliable after a pause —
       // it often returns without actually speaking. Try resume first, then
       // verify after a tick; if nothing is speaking, restart from the
@@ -545,9 +551,10 @@ export function VoiceOutput({
     // Stop the keep-alive pump first — otherwise its pause/resume cycle
     // fights with the user's pause and the audio resumes on its own.
     stopKeepAlive();
-    if (supported) {
-      try { window.speechSynthesis.pause(); } catch { /* noop */ }
+    if (cloudAudioRef.current && !cloudAudioRef.current.paused) {
+      try { cloudAudioRef.current.pause(); } catch { /* noop */ }
     }
+    try { window.speechSynthesis.pause(); } catch { /* noop */ }
     setState("paused");
   };
   const replay = () => createAndPlay();
