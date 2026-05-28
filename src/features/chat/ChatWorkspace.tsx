@@ -110,6 +110,7 @@ export function ChatWorkspace() {
               forcedLang: forcedLangRef.current,
               preferredLang: langRef.current,
               memory: buildMemoryContext(),
+              tasks: buildTasksContext(),
             },
           };
         },
