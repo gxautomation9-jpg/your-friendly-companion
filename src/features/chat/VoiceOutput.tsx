@@ -245,6 +245,86 @@ export function VoiceOutput({
       const runs = splitByLanguage(chunk);
       const primary = runs[0];
       const runLang: "ar" | "en" = primary?.lang ?? langPrefix;
+
+      // Cloud voice path — when the user picked a Gemini voice for this
+      // language, fetch the whole chunk as one audio file and play it.
+      const cloudVoiceId = runLang === "ar" ? currentPrefs.arCloudVoice : currentPrefs.enCloudVoice;
+      if (cloudVoiceId) {
+        const ac = new AbortController();
+        cloudAbortRef.current = ac;
+        setDiag((d) => ({
+          ...d,
+          voiceName: `Gemini · ${cloudVoiceId}`,
+          voiceURI: `cloud:${cloudVoiceId}`,
+          voiceLang: runLang === "ar" ? "ar-EG" : "en-US",
+          chunkIndex: chunkIndexRef.current,
+          chunkCount: chunksRef.current.length,
+        }));
+        fetchCloudTtsUrl(chunk, cloudVoiceId, runLang, ac.signal)
+          .then((url) => {
+            if (token !== playTokenRef.current || stoppedRef.current) {
+              URL.revokeObjectURL(url);
+              return;
+            }
+            if (cloudUrlRef.current) {
+              try { URL.revokeObjectURL(cloudUrlRef.current); } catch { /* noop */ }
+            }
+            cloudUrlRef.current = url;
+            const audio = new Audio(url);
+            audio.playbackRate = Math.min(1.25, speedRef.current * 1.08);
+            cloudAudioRef.current = audio;
+            audio.onplay = () => {
+              if (token !== playTokenRef.current) return;
+              startedRef.current = true;
+              activeRef.current = true;
+              setNotice(null);
+              setState("playing");
+              if (watchdogRef.current != null) { window.clearTimeout(watchdogRef.current); watchdogRef.current = null; }
+            };
+            audio.onended = () => {
+              if (token !== playTokenRef.current || stoppedRef.current) return;
+              if (cloudUrlRef.current) {
+                try { URL.revokeObjectURL(cloudUrlRef.current); } catch { /* noop */ }
+                cloudUrlRef.current = null;
+              }
+              cloudAudioRef.current = null;
+              chunkIndexRef.current += 1;
+              setProgress(chunksRef.current.length ? chunkIndexRef.current / chunksRef.current.length : 1);
+              window.setTimeout(() => speakChunk(token), 40);
+            };
+            audio.onerror = () => {
+              if (token !== playTokenRef.current) return;
+              setDiag((d) => ({
+                ...d,
+                lastError: "cloud-playback-failed",
+                lastErrorChunkIndex: chunkIndexRef.current,
+                recommendation: copy.recoSynthFailed,
+              }));
+              activeRef.current = false;
+              setState("idle");
+              setNotice(copy.recoSynthFailed);
+            };
+            audio.play().catch(() => {
+              setNotice(copy.recoSynthFailed);
+              setState("idle");
+            });
+          })
+          .catch((err) => {
+            if ((err as Error).name === "AbortError") return;
+            if (token !== playTokenRef.current) return;
+            setDiag((d) => ({
+              ...d,
+              lastError: "cloud-tts-failed",
+              lastErrorChunkIndex: chunkIndexRef.current,
+              recommendation: copy.recoNetwork,
+            }));
+            activeRef.current = false;
+            setState("idle");
+            setNotice(copy.recoNetwork);
+          });
+        return;
+      }
+
       const selectedVoice = pickBestVoice(pool, runLang, currentPrefs);
 
       // Pre-flight: if ANY run in this chunk lacks a matching device voice,
