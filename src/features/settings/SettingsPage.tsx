@@ -60,8 +60,18 @@ export function SettingsPage() {
                   <SelectItem value="ar">العربية</SelectItem>
                 </SelectContent>
               </Select>
+            <div className="space-y-1.5">
+              <Label>{lang === "ar" ? "اللون" : "Color mode"}</Label>
+              <Select value={theme} onValueChange={(v) => changeTheme(v as AstraTheme)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="blue">{lang === "ar" ? "أزرق كهربائي" : "Electric blue"}</SelectItem>
+                  <SelectItem value="purple">{lang === "ar" ? "بنفسجي نيون" : "Neon purple"}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
+        </div>
         </div>
 
         <div className="rounded-2xl glass-strong p-5">
