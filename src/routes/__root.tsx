@@ -116,9 +116,12 @@ import { AuthProvider } from "@/lib/auth-context";
 import { I18nProvider } from "@/lib/i18n";
 import { Toaster } from "@/components/ui/sonner";
 import { PoweredByGx } from "@/components/PoweredByGx";
+import { useEffect } from "react";
+import { initTheme } from "@/lib/theme";
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  useEffect(() => { initTheme(); }, []);
 
   return (
     <QueryClientProvider client={queryClient}>

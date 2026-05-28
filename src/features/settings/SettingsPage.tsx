@@ -5,6 +5,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { Download, Trash2, ShieldCheck } from "lucide-react";
 import { Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { loadTheme, setTheme as applyAstraTheme, type AstraTheme } from "@/lib/theme";
 
 // Session-only keys (legacy + ephemeral chat state).
 const SESSION_KEYS = ["astra:session-chats", "astra:session-tasks", "astra:session-memories"];
@@ -13,6 +15,9 @@ const LOCAL_KEYS = ["astra:tasks-v1", "astra:memories-v2", "astra-voice-prefs-v1
 
 export function SettingsPage() {
   const { t, lang, setLang } = useI18n();
+  const [theme, setThemeState] = useState<AstraTheme>("blue");
+  useEffect(() => { setThemeState(loadTheme()); }, []);
+  const changeTheme = (v: AstraTheme) => { applyAstraTheme(v); setThemeState(v); };
 
   const exportData = () => {
     const out: Record<string, unknown> = {};
@@ -55,8 +60,18 @@ export function SettingsPage() {
                   <SelectItem value="ar">العربية</SelectItem>
                 </SelectContent>
               </Select>
+            <div className="space-y-1.5">
+              <Label>{lang === "ar" ? "اللون" : "Color mode"}</Label>
+              <Select value={theme} onValueChange={(v) => changeTheme(v as AstraTheme)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="blue">{lang === "ar" ? "أزرق كهربائي" : "Electric blue"}</SelectItem>
+                  <SelectItem value="purple">{lang === "ar" ? "بنفسجي نيون" : "Neon purple"}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
+        </div>
         </div>
 
         <div className="rounded-2xl glass-strong p-5">

@@ -2,10 +2,19 @@ import { Link } from "@tanstack/react-router";
 import { AstraLogo } from "./AstraLogo";
 import { useI18n } from "@/lib/i18n";
 import { Button } from "./ui/button";
-import { Brain, CheckSquare, Globe, MessageSquare, Settings } from "lucide-react";
+import { Brain, CheckSquare, Globe, MessageSquare, Settings, Palette } from "lucide-react";
+import { useEffect, useState } from "react";
+import { loadTheme, setTheme as applyAstraTheme, type AstraTheme } from "@/lib/theme";
 
 export function Topbar() {
   const { lang, setLang, t } = useI18n();
+  const [theme, setThemeState] = useState<AstraTheme>("blue");
+  useEffect(() => { setThemeState(loadTheme()); }, []);
+  const toggleTheme = () => {
+    const next: AstraTheme = theme === "blue" ? "purple" : "blue";
+    applyAstraTheme(next);
+    setThemeState(next);
+  };
   const appLinks = [
     { to: "/chat", label: t("chat"), icon: MessageSquare },
     { to: "/tasks", label: t("tasks"), icon: CheckSquare },
@@ -30,6 +39,15 @@ export function Topbar() {
           <Link to="/" hash="faq" className="hover:text-foreground transition">{t("faq")}</Link>
         </nav>
         <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            aria-label={theme === "blue" ? "Switch to purple mode" : "Switch to blue mode"}
+            title={theme === "blue" ? (lang === "ar" ? "تبديل إلى البنفسجي" : "Switch to purple") : (lang === "ar" ? "تبديل إلى الأزرق" : "Switch to blue")}
+          >
+            <Palette className={`h-4 w-4 ${theme === "purple" ? "text-electric" : ""}`} />
+          </Button>
           <Button variant="ghost" size="icon" onClick={() => setLang(lang === "en" ? "ar" : "en")} aria-label="Language">
             <Globe className="h-4 w-4" />
           </Button>

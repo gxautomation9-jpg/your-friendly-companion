@@ -74,3 +74,24 @@ export function deleteTask(id: string) {
 export function clearAllTasks() {
   if (typeof window !== "undefined") localStorage.removeItem(KEY);
 }
+
+// Build a compact tasks block for the AI system prompt.
+// Sorts urgent → high → medium → low, todo before done, newest first.
+export function buildTasksContext(maxChars = 1800): string | null {
+  const items = listTasks();
+  if (items.length === 0) return null;
+  const rank: Record<Priority, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+  const sorted = [...items].sort((a, b) => {
+    if (a.status !== b.status) return a.status === "done" ? 1 : -1;
+    if (rank[a.priority] !== rank[b.priority]) return rank[a.priority] - rank[b.priority];
+    return a.created_at < b.created_at ? 1 : -1;
+  });
+  const lines: string[] = [];
+  for (const t of sorted) {
+    const desc = t.description ? ` — ${t.description}` : "";
+    const line = `- [${t.priority}] [${t.status}] ${t.title}${desc}`;
+    if (lines.join("\n").length + line.length + 1 > maxChars) break;
+    lines.push(line);
+  }
+  return lines.length ? lines.join("\n") : null;
+}

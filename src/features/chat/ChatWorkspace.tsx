@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { VoiceInput } from "@/features/chat/VoiceInput";
 import { VoiceOutput } from "@/features/chat/VoiceOutput";
 import { buildMemoryContext, extractAutoFacts } from "@/lib/astra-memory";
+import { buildTasksContext } from "@/lib/astra-tasks";
 import { ChatRetentionBanner, markFirstMessageIfMissing, resetRetentionClock } from "@/features/chat/ChatRetentionBanner";
 
 // Single persistent conversation — no multi-chat sidebar.
@@ -109,6 +110,7 @@ export function ChatWorkspace() {
               forcedLang: forcedLangRef.current,
               preferredLang: langRef.current,
               memory: buildMemoryContext(),
+              tasks: buildTasksContext(),
             },
           };
         },
