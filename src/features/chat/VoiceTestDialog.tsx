@@ -284,10 +284,10 @@ export function VoiceTestDialog({ appLang, trigger }: { appLang: "ar" | "en"; tr
           <Switch id="prefer-female" checked={prefs.preferFemale} onCheckedChange={togglePreferFemale} />
         </div>
 
-        {/* Scrollable body — both axes on mobile, two columns on desktop */}
+        {/* Scrollable body — swipe left/right on mobile between AR & EN columns. */}
         <div className="-mx-1 flex-1 overflow-y-auto overflow-x-auto px-1">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="space-y-3">
+          <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain pb-1 md:grid md:grid-cols-2 md:overflow-visible">
+            <div className="min-w-[88%] shrink-0 snap-start space-y-3 md:min-w-0 md:shrink">
               <Column title={
                 <span className="flex items-center gap-2">
                   <Smartphone className="h-3.5 w-3.5 text-muted-foreground" />
@@ -305,7 +305,7 @@ export function VoiceTestDialog({ appLang, trigger }: { appLang: "ar" | "en"; tr
                 {renderCloud(CLOUD_AR_VOICES, "ar")}
               </Column>
             </div>
-            <div className="space-y-3">
+            <div className="min-w-[88%] shrink-0 snap-start space-y-3 md:min-w-0 md:shrink">
               <Column title={
                 <span className="flex items-center gap-2">
                   <Smartphone className="h-3.5 w-3.5 text-muted-foreground" />
@@ -324,6 +324,9 @@ export function VoiceTestDialog({ appLang, trigger }: { appLang: "ar" | "en"; tr
               </Column>
             </div>
           </div>
+          <p className="mt-2 text-center text-[11px] text-muted-foreground md:hidden">
+            {appLang === "ar" ? "اسحب يميناً ويساراً للتبديل بين العربية والإنجليزية ↔" : "Swipe ← / → to switch between Arabic and English"}
+          </p>
         </div>
 
         <DialogFooter className="pt-2">
