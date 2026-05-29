@@ -460,7 +460,8 @@ export function VoiceOutput({
         // If still speaking and not paused, give the engine more time.
         try {
           const synth = window.speechSynthesis;
-          if (synth.speaking && !synth.paused) return;
+          if (synth.paused) return; // user paused — don't advance
+          if (synth.speaking) return; // engine still working — give it more time
         } catch { /* noop */ }
         try { window.speechSynthesis.cancel(); } catch { /* noop */ }
         chunkIndexRef.current += 1;
@@ -479,6 +480,7 @@ export function VoiceOutput({
       chunksRef.current = [];
       chunkIndexRef.current = 0;
       stopKeepAlive();
+      if (chunkWatchdogRef.current != null) { window.clearTimeout(chunkWatchdogRef.current); chunkWatchdogRef.current = null; }
       if (watchdogRef.current != null) { window.clearTimeout(watchdogRef.current); watchdogRef.current = null; }
       setProgress(0);
       if (supported) {
