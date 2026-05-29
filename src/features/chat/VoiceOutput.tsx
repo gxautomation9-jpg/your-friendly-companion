@@ -15,7 +15,18 @@ type PlaybackState = "idle" | "playing" | "paused";
 const VOICE_OUTPUT_START = "astra-voice-output-start";
 // Keep chunks short so Chrome's ~15s per-utterance limit never truncates
 // long replies (common symptom: TTS stops reading after ~5 lines).
-const MAX_CHUNK_LENGTH = 110;
+// Mobile engines (Android Chrome, iOS Safari) stall even sooner and often
+// drop `onend` silently, so we chunk much more aggressively there.
+const MAX_CHUNK_LENGTH_DESKTOP = 110;
+const MAX_CHUNK_LENGTH_MOBILE = 70;
+function isMobileUA() {
+  if (typeof navigator === "undefined") return false;
+  return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+    || (navigator.maxTouchPoints ?? 0) > 1;
+}
+function getMaxChunkLength() {
+  return isMobileUA() ? MAX_CHUNK_LENGTH_MOBILE : MAX_CHUNK_LENGTH_DESKTOP;
+}
 
 function isArabic(text: string) {
   return /[\u0600-\u06FF]/.test(text);
@@ -33,7 +44,7 @@ function normalizeSpeechText(text: string) {
     .trim();
 }
 
-function splitForSpeech(text: string) {
+function splitForSpeech(text: string, maxLen = getMaxChunkLength()) {
   const sentences = text.match(/[^.!?؟؛。\n]+[.!?؟؛。]?/g) ?? [text];
   const chunks: string[] = [];
   let current = "";
@@ -41,11 +52,11 @@ function splitForSpeech(text: string) {
   for (const raw of sentences) {
     const s = raw.trim();
     if (!s) continue;
-    if (s.length > MAX_CHUNK_LENGTH) {
+    if (s.length > maxLen) {
       flush();
       let partial = "";
       for (const w of s.split(/\s+/)) {
-        if ((partial + " " + w).trim().length > MAX_CHUNK_LENGTH) {
+        if ((partial + " " + w).trim().length > maxLen) {
           if (partial.trim()) chunks.push(partial.trim());
           partial = w;
         } else partial = (partial + " " + w).trim();
@@ -53,7 +64,7 @@ function splitForSpeech(text: string) {
       if (partial.trim()) chunks.push(partial.trim());
       continue;
     }
-    if ((current + " " + s).trim().length > MAX_CHUNK_LENGTH) flush();
+    if ((current + " " + s).trim().length > maxLen) flush();
     current = (current + " " + s).trim();
   }
   flush();
@@ -149,6 +160,7 @@ export function VoiceOutput({
   const prevSpeedRef = useRef(speed);
   const startedRef = useRef(false);
   const watchdogRef = useRef<number | null>(null);
+  const chunkWatchdogRef = useRef<number | null>(null);
   const cloudAudioRef = useRef<HTMLAudioElement | null>(null);
   const cloudUrlRef = useRef<string | null>(null);
   const cloudAbortRef = useRef<AbortController | null>(null);
@@ -216,7 +228,7 @@ export function VoiceOutput({
           window.speechSynthesis.resume();
         } catch { /* noop */ }
       }
-    }, 7_000);
+    }, isMobileUA() ? 4_000 : 7_000);
   }, [supported]);
 
   const stopKeepAlive = useCallback(() => {
@@ -279,7 +291,7 @@ export function VoiceOutput({
               if (token !== playTokenRef.current) return;
               startedRef.current = true;
               activeRef.current = true;
-              setNotice(null);
+              // Keep `notice` (e.g. quota warning) visible — user dismisses it.
               setState("playing");
               if (watchdogRef.current != null) { window.clearTimeout(watchdogRef.current); watchdogRef.current = null; }
             };
@@ -373,7 +385,7 @@ export function VoiceOutput({
         startedRef.current = true;
         if (watchdogRef.current != null) { window.clearTimeout(watchdogRef.current); watchdogRef.current = null; }
         activeRef.current = true;
-        setNotice(null);
+        // Keep `notice` (e.g. quota warning) visible — user dismisses it.
         setState("playing");
         startKeepAlive();
       };
@@ -435,6 +447,27 @@ export function VoiceOutput({
       };
 
       window.speechSynthesis.speak(utterance);
+
+      // Mobile speech engines occasionally drop `onend` silently, leaving the
+      // queue stuck after a few sentences. Schedule a per-utterance watchdog
+      // generously sized for the text length; if it fires we force-advance.
+      if (chunkWatchdogRef.current != null) { window.clearTimeout(chunkWatchdogRef.current); chunkWatchdogRef.current = null; }
+      const utterText = (primary?.text ?? chunk);
+      const estimateMs = Math.max(4000, utterText.length * 95 + 4000);
+      chunkWatchdogRef.current = window.setTimeout(() => {
+        if (token !== playTokenRef.current || stoppedRef.current) return;
+        if (!activeRef.current) return;
+        // If still speaking and not paused, give the engine more time.
+        try {
+          const synth = window.speechSynthesis;
+          if (synth.paused) return; // user paused — don't advance
+          if (synth.speaking) return; // engine still working — give it more time
+        } catch { /* noop */ }
+        try { window.speechSynthesis.cancel(); } catch { /* noop */ }
+        chunkIndexRef.current += 1;
+        setProgress(chunksRef.current.length ? chunkIndexRef.current / chunksRef.current.length : 1);
+        window.setTimeout(() => speakChunk(token), 80);
+      }, estimateMs);
     },
     [supported, voices, langPrefix, startKeepAlive, stopKeepAlive, recommendationFor, copy.voiceUnavailable, copy.recoSynthFailed, copy.recoNetwork],
   );
@@ -447,6 +480,7 @@ export function VoiceOutput({
       chunksRef.current = [];
       chunkIndexRef.current = 0;
       stopKeepAlive();
+      if (chunkWatchdogRef.current != null) { window.clearTimeout(chunkWatchdogRef.current); chunkWatchdogRef.current = null; }
       if (watchdogRef.current != null) { window.clearTimeout(watchdogRef.current); watchdogRef.current = null; }
       setProgress(0);
       if (supported) {
@@ -693,12 +727,25 @@ export function VoiceOutput({
         </div>
       )}
       {notice && (
-        <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-          <span>{notice}</span>
-          <VoiceTestDialog
-            appLang={appLang}
-            trigger={<Button type="button" size="sm" variant="outline" className="h-7">{copy.testVoices}</Button>}
-          />
+        <div className="mt-2 flex items-start justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-100">
+          <span className="flex-1 leading-relaxed">{notice}</span>
+          <div className="flex shrink-0 items-center gap-1">
+            <VoiceTestDialog
+              appLang={appLang}
+              trigger={<Button type="button" size="sm" variant="outline" className="h-7">{copy.testVoices}</Button>}
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2"
+              onClick={() => setNotice(null)}
+              aria-label={appLang === "ar" ? "إخفاء" : "Dismiss"}
+              title={appLang === "ar" ? "إخفاء" : "Dismiss"}
+            >
+              ✕
+            </Button>
+          </div>
         </div>
       )}
     </div>
