@@ -216,7 +216,7 @@ export function VoiceOutput({
           window.speechSynthesis.resume();
         } catch { /* noop */ }
       }
-    }, 10_000);
+    }, 7_000);
   }, [supported]);
 
   const stopKeepAlive = useCallback(() => {
