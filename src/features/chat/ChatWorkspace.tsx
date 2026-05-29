@@ -351,11 +351,11 @@ export function ChatWorkspace() {
               <span className="opacity-70">
                 {lang === "ar"
                   ? forcedLang
-                    ? `مقفول على ${forcedLang === "ar" ? "العربية" : "الإنجليزية"} · اضغط Enter للإرسال`
-                    : "وضع تلقائي — أسترا تتبع لغتك · Enter للإرسال"
+                    ? `مقفول على ${forcedLang === "ar" ? "العربية" : "الإنجليزية"} · Enter للإرسال على الكمبيوتر، زر الإرسال على الهاتف`
+                    : "وضع تلقائي — Enter للإرسال على الكمبيوتر، زر الإرسال على الهاتف"
                   : forcedLang
-                    ? `Locked to ${forcedLang === "ar" ? "Arabic" : "English"} · Enter to send`
-                    : "Auto mode — Astra follows your language · Enter to send"}
+                    ? `Locked to ${forcedLang === "ar" ? "Arabic" : "English"} · Enter to send on desktop, tap Send on mobile`
+                    : "Auto mode — Enter to send on desktop, tap Send on mobile"}
               </span>
             </div>
           </div>
