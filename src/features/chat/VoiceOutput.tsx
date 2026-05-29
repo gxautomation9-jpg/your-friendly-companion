@@ -13,7 +13,9 @@ import { fetchCloudTtsUrl } from "@/features/chat/CloudVoices";
 
 type PlaybackState = "idle" | "playing" | "paused";
 const VOICE_OUTPUT_START = "astra-voice-output-start";
-const MAX_CHUNK_LENGTH = 180;
+// Keep chunks short so Chrome's ~15s per-utterance limit never truncates
+// long replies (common symptom: TTS stops reading after ~5 lines).
+const MAX_CHUNK_LENGTH = 110;
 
 function isArabic(text: string) {
   return /[\u0600-\u06FF]/.test(text);
