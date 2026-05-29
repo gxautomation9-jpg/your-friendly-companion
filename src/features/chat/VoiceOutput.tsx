@@ -160,6 +160,7 @@ export function VoiceOutput({
   const prevSpeedRef = useRef(speed);
   const startedRef = useRef(false);
   const watchdogRef = useRef<number | null>(null);
+  const chunkWatchdogRef = useRef<number | null>(null);
   const cloudAudioRef = useRef<HTMLAudioElement | null>(null);
   const cloudUrlRef = useRef<string | null>(null);
   const cloudAbortRef = useRef<AbortController | null>(null);
@@ -446,6 +447,26 @@ export function VoiceOutput({
       };
 
       window.speechSynthesis.speak(utterance);
+
+      // Mobile speech engines occasionally drop `onend` silently, leaving the
+      // queue stuck after a few sentences. Schedule a per-utterance watchdog
+      // generously sized for the text length; if it fires we force-advance.
+      if (chunkWatchdogRef.current != null) { window.clearTimeout(chunkWatchdogRef.current); chunkWatchdogRef.current = null; }
+      const utterText = (primary?.text ?? chunk);
+      const estimateMs = Math.max(4000, utterText.length * 95 + 4000);
+      chunkWatchdogRef.current = window.setTimeout(() => {
+        if (token !== playTokenRef.current || stoppedRef.current) return;
+        if (!activeRef.current) return;
+        // If still speaking and not paused, give the engine more time.
+        try {
+          const synth = window.speechSynthesis;
+          if (synth.speaking && !synth.paused) return;
+        } catch { /* noop */ }
+        try { window.speechSynthesis.cancel(); } catch { /* noop */ }
+        chunkIndexRef.current += 1;
+        setProgress(chunksRef.current.length ? chunkIndexRef.current / chunksRef.current.length : 1);
+        window.setTimeout(() => speakChunk(token), 80);
+      }, estimateMs);
     },
     [supported, voices, langPrefix, startKeepAlive, stopKeepAlive, recommendationFor, copy.voiceUnavailable, copy.recoSynthFailed, copy.recoNetwork],
   );
