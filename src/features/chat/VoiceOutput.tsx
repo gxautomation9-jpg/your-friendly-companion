@@ -15,7 +15,18 @@ type PlaybackState = "idle" | "playing" | "paused";
 const VOICE_OUTPUT_START = "astra-voice-output-start";
 // Keep chunks short so Chrome's ~15s per-utterance limit never truncates
 // long replies (common symptom: TTS stops reading after ~5 lines).
-const MAX_CHUNK_LENGTH = 110;
+// Mobile engines (Android Chrome, iOS Safari) stall even sooner and often
+// drop `onend` silently, so we chunk much more aggressively there.
+const MAX_CHUNK_LENGTH_DESKTOP = 110;
+const MAX_CHUNK_LENGTH_MOBILE = 70;
+function isMobileUA() {
+  if (typeof navigator === "undefined") return false;
+  return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+    || (navigator.maxTouchPoints ?? 0) > 1;
+}
+function getMaxChunkLength() {
+  return isMobileUA() ? MAX_CHUNK_LENGTH_MOBILE : MAX_CHUNK_LENGTH_DESKTOP;
+}
 
 function isArabic(text: string) {
   return /[\u0600-\u06FF]/.test(text);
