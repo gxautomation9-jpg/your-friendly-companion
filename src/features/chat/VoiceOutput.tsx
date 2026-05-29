@@ -227,7 +227,7 @@ export function VoiceOutput({
           window.speechSynthesis.resume();
         } catch { /* noop */ }
       }
-    }, 7_000);
+    }, isMobileUA() ? 4_000 : 7_000);
   }, [supported]);
 
   const stopKeepAlive = useCallback(() => {
