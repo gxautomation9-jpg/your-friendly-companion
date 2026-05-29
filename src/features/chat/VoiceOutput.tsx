@@ -727,12 +727,25 @@ export function VoiceOutput({
         </div>
       )}
       {notice && (
-        <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-          <span>{notice}</span>
-          <VoiceTestDialog
-            appLang={appLang}
-            trigger={<Button type="button" size="sm" variant="outline" className="h-7">{copy.testVoices}</Button>}
-          />
+        <div className="mt-2 flex items-start justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-100">
+          <span className="flex-1 leading-relaxed">{notice}</span>
+          <div className="flex shrink-0 items-center gap-1">
+            <VoiceTestDialog
+              appLang={appLang}
+              trigger={<Button type="button" size="sm" variant="outline" className="h-7">{copy.testVoices}</Button>}
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2"
+              onClick={() => setNotice(null)}
+              aria-label={appLang === "ar" ? "إخفاء" : "Dismiss"}
+              title={appLang === "ar" ? "إخفاء" : "Dismiss"}
+            >
+              ✕
+            </Button>
+          </div>
         </div>
       )}
     </div>
