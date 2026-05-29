@@ -292,7 +292,18 @@ export function ChatWorkspace() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); }
+                    // On touch devices (phones/tablets), the on-screen keyboard's
+                    // Enter key must insert a newline, not send. Users send by
+                    // tapping the Send button. Also respect IME composition.
+                    const isTouch = typeof window !== "undefined" && (
+                      ("ontouchstart" in window) ||
+                      (navigator.maxTouchPoints && navigator.maxTouchPoints > 0)
+                    );
+                    const composing = (e.nativeEvent as { isComposing?: boolean }).isComposing;
+                    if (e.key === "Enter" && !e.shiftKey && !isTouch && !composing) {
+                      e.preventDefault();
+                      onSend();
+                    }
                     if (e.key === "Escape" && isLoading) stop();
                   }}
                   dir={isRtl(input) ? "rtl" : "ltr"}
