@@ -290,7 +290,7 @@ export function VoiceOutput({
               if (token !== playTokenRef.current) return;
               startedRef.current = true;
               activeRef.current = true;
-              setNotice(null);
+              // Keep `notice` (e.g. quota warning) visible — user dismisses it.
               setState("playing");
               if (watchdogRef.current != null) { window.clearTimeout(watchdogRef.current); watchdogRef.current = null; }
             };
@@ -384,7 +384,7 @@ export function VoiceOutput({
         startedRef.current = true;
         if (watchdogRef.current != null) { window.clearTimeout(watchdogRef.current); watchdogRef.current = null; }
         activeRef.current = true;
-        setNotice(null);
+        // Keep `notice` (e.g. quota warning) visible — user dismisses it.
         setState("playing");
         startKeepAlive();
       };
