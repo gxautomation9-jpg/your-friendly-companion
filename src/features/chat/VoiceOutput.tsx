@@ -44,7 +44,7 @@ function normalizeSpeechText(text: string) {
     .trim();
 }
 
-function splitForSpeech(text: string) {
+function splitForSpeech(text: string, maxLen = getMaxChunkLength()) {
   const sentences = text.match(/[^.!?؟؛。\n]+[.!?؟؛。]?/g) ?? [text];
   const chunks: string[] = [];
   let current = "";
@@ -52,11 +52,11 @@ function splitForSpeech(text: string) {
   for (const raw of sentences) {
     const s = raw.trim();
     if (!s) continue;
-    if (s.length > MAX_CHUNK_LENGTH) {
+    if (s.length > maxLen) {
       flush();
       let partial = "";
       for (const w of s.split(/\s+/)) {
-        if ((partial + " " + w).trim().length > MAX_CHUNK_LENGTH) {
+        if ((partial + " " + w).trim().length > maxLen) {
           if (partial.trim()) chunks.push(partial.trim());
           partial = w;
         } else partial = (partial + " " + w).trim();
@@ -64,7 +64,7 @@ function splitForSpeech(text: string) {
       if (partial.trim()) chunks.push(partial.trim());
       continue;
     }
-    if ((current + " " + s).trim().length > MAX_CHUNK_LENGTH) flush();
+    if ((current + " " + s).trim().length > maxLen) flush();
     current = (current + " " + s).trim();
   }
   flush();
