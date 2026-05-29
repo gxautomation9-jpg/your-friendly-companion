@@ -187,7 +187,7 @@ export function VoiceOutput({
             recoNoVoice: "Install a system voice for this language, or pick a different one from \"Test my voices\".",
             recoInterrupted: "Playback was interrupted. Make sure no other tab is using audio and try again.",
             recoSynthFailed: "Synthesis failed — try a local (offline) voice from \"Test my voices\".",
-            recoNetwork: "Cloud voice needs internet — switch to a local voice for reliability.",
+            recoNetwork: "Cloud voice quota is exhausted. Open your Google settings (Settings → System → Languages & input → Text-to-speech output → Google TTS → Install voice data), then pick a local voice from \"Test my voices\".",
           },
     [appLang],
   );
