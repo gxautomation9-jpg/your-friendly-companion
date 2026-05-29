@@ -13,7 +13,9 @@ import { fetchCloudTtsUrl } from "@/features/chat/CloudVoices";
 
 type PlaybackState = "idle" | "playing" | "paused";
 const VOICE_OUTPUT_START = "astra-voice-output-start";
-const MAX_CHUNK_LENGTH = 180;
+// Keep chunks short so Chrome's ~15s per-utterance limit never truncates
+// long replies (common symptom: TTS stops reading after ~5 lines).
+const MAX_CHUNK_LENGTH = 110;
 
 function isArabic(text: string) {
   return /[\u0600-\u06FF]/.test(text);
@@ -173,7 +175,7 @@ export function VoiceOutput({
             recoNoVoice: "ثبّت صوتاً عربياً من إعدادات النظام، أو اختر صوتاً آخر من \"اختبر أصواتي\".",
             recoInterrupted: "تم قطع التشغيل. تأكد أن تبويباً آخر لا يستخدم الصوت ثم أعد المحاولة.",
             recoSynthFailed: "فشل التركيب — جرّب صوتاً محلياً (local) من قائمة \"اختبر أصواتي\".",
-            recoNetwork: "صوت سحابي يحتاج إنترنت — اختر صوتاً محلياً للاستقرار.",
+            recoNetwork: "انتهت حصة الصوت السحابي. افتح إعدادات Google على هاتفك (الإعدادات → النظام → اللغات والإدخال → الإخراج الصوتي → محرك Google لتحويل النص إلى كلام → تثبيت بيانات الصوت → العربية)، ثم اختر صوتاً محلياً من \"اختبر أصواتي\".",
           }
         : {
             play: "Play", pause: "Pause", stop: "Stop", replay: "Replay",
@@ -185,7 +187,7 @@ export function VoiceOutput({
             recoNoVoice: "Install a system voice for this language, or pick a different one from \"Test my voices\".",
             recoInterrupted: "Playback was interrupted. Make sure no other tab is using audio and try again.",
             recoSynthFailed: "Synthesis failed — try a local (offline) voice from \"Test my voices\".",
-            recoNetwork: "Cloud voice needs internet — switch to a local voice for reliability.",
+            recoNetwork: "Cloud voice quota is exhausted. Open your Google settings (Settings → System → Languages & input → Text-to-speech output → Google TTS → Install voice data), then pick a local voice from \"Test my voices\".",
           },
     [appLang],
   );
@@ -214,7 +216,7 @@ export function VoiceOutput({
           window.speechSynthesis.resume();
         } catch { /* noop */ }
       }
-    }, 10_000);
+    }, 7_000);
   }, [supported]);
 
   const stopKeepAlive = useCallback(() => {

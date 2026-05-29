@@ -292,7 +292,18 @@ export function ChatWorkspace() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); }
+                    // On touch devices (phones/tablets), the on-screen keyboard's
+                    // Enter key must insert a newline, not send. Users send by
+                    // tapping the Send button. Also respect IME composition.
+                    const isTouch = typeof window !== "undefined" && (
+                      ("ontouchstart" in window) ||
+                      (navigator.maxTouchPoints && navigator.maxTouchPoints > 0)
+                    );
+                    const composing = (e.nativeEvent as { isComposing?: boolean }).isComposing;
+                    if (e.key === "Enter" && !e.shiftKey && !isTouch && !composing) {
+                      e.preventDefault();
+                      onSend();
+                    }
                     if (e.key === "Escape" && isLoading) stop();
                   }}
                   dir={isRtl(input) ? "rtl" : "ltr"}
@@ -340,11 +351,11 @@ export function ChatWorkspace() {
               <span className="opacity-70">
                 {lang === "ar"
                   ? forcedLang
-                    ? `مقفول على ${forcedLang === "ar" ? "العربية" : "الإنجليزية"} · اضغط Enter للإرسال`
-                    : "وضع تلقائي — أسترا تتبع لغتك · Enter للإرسال"
+                    ? `مقفول على ${forcedLang === "ar" ? "العربية" : "الإنجليزية"} · Enter للإرسال على الكمبيوتر، زر الإرسال على الهاتف`
+                    : "وضع تلقائي — Enter للإرسال على الكمبيوتر، زر الإرسال على الهاتف"
                   : forcedLang
-                    ? `Locked to ${forcedLang === "ar" ? "Arabic" : "English"} · Enter to send`
-                    : "Auto mode — Astra follows your language · Enter to send"}
+                    ? `Locked to ${forcedLang === "ar" ? "Arabic" : "English"} · Enter to send on desktop, tap Send on mobile`
+                    : "Auto mode — Enter to send on desktop, tap Send on mobile"}
               </span>
             </div>
           </div>
