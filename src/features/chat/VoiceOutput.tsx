@@ -335,8 +335,8 @@ export function VoiceOutput({
     segmentDeadlineRef.current = estimateSegmentDeadline(segment, rate, !!cloudVoiceId);
 
     if (cloudVoiceId) {
-      sourceRef.current = "cloud";
       cleanupCloud(true);
+      sourceRef.current = "cloud";
       const ac = new AbortController();
       cloudAbortRef.current = ac;
 
