@@ -113,6 +113,11 @@ type Diagnostics = {
   recommendation: string | null;
 };
 
+type SpeechSegment = {
+  text: string;
+  lang: "ar" | "en";
+};
+
 export function VoiceOutput({
   text,
   appLang,
@@ -138,24 +143,29 @@ export function VoiceOutput({
     recommendation: null,
   });
 
-  const chunksRef = useRef<string[]>([]);
-  const chunkIndexRef = useRef(0);
+  const segmentsRef = useRef<SpeechSegment[]>([]);
+  const segmentIndexRef = useRef(0);
   const playTokenRef = useRef(0);
   const stoppedRef = useRef(false);
   const activeRef = useRef(false);
   const speedRef = useRef(speed);
   const instanceIdRef = useRef(Math.random());
-  const keepAliveRef = useRef<number | null>(null);
   const prevSpeedRef = useRef(speed);
-  const startedRef = useRef(false);
-  const watchdogRef = useRef<number | null>(null);
+  const stateRef = useRef<PlaybackState>("idle");
   const cloudAudioRef = useRef<HTMLAudioElement | null>(null);
   const cloudUrlRef = useRef<string | null>(null);
   const cloudAbortRef = useRef<AbortController | null>(null);
+  const sourceRef = useRef<"local" | "cloud" | null>(null);
+  const lastActivityRef = useRef(0);
+  const lastAudioTimeRef = useRef(0);
+  const segmentDeadlineRef = useRef(0);
+  const recoveryAttemptsRef = useRef(0);
+  const userPausedRef = useRef(false);
+  const playSegmentRef = useRef<(token: number) => void>(() => undefined);
 
-  const prefs = useVoicePrefs();
+  useVoicePrefs();
   const speechText = useMemo(() => normalizeSpeechText(text), [text]);
-  const langPrefix: "ar" | "en" = useMemo(
+  const fallbackLang: "ar" | "en" = useMemo(
     () => preferLang ?? (isArabic(speechText) ? "ar" : "en"),
     [preferLang, speechText],
   );
@@ -204,360 +214,350 @@ export function VoiceOutput({
     [copy],
   );
 
-  // Chrome stops speechSynthesis after ~15s — pump it with pause/resume.
-  const startKeepAlive = useCallback(() => {
-    if (!supported) return;
-    if (keepAliveRef.current != null) return;
-    keepAliveRef.current = window.setInterval(() => {
-      if (!activeRef.current) return;
-      if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
-        try {
-          window.speechSynthesis.pause();
-          window.speechSynthesis.resume();
-        } catch { /* noop */ }
-      }
-    }, 7_000);
-  }, [supported]);
+  const setPlaybackState = useCallback((next: PlaybackState) => {
+    stateRef.current = next;
+    setState(next);
+  }, []);
 
-  const stopKeepAlive = useCallback(() => {
-    if (keepAliveRef.current != null) {
-      window.clearInterval(keepAliveRef.current);
-      keepAliveRef.current = null;
+  const buildSegments = useCallback(
+    (value: string) =>
+      splitForSpeech(value).flatMap((chunk) => {
+        const runs = splitByLanguage(chunk);
+        if (runs.length) {
+          return runs
+            .map((run) => ({ text: run.text.trim(), lang: run.lang }))
+            .filter((run) => run.text.length > 0);
+        }
+        return [{ text: chunk.trim(), lang: fallbackLang } satisfies SpeechSegment];
+      }),
+    [fallbackLang],
+  );
+
+  const estimateSegmentDeadline = useCallback((segment: SpeechSegment, rate: number, isCloud: boolean) => {
+    const baseMs = Math.max(3_200, Math.round((segment.text.length * 92) / Math.max(rate, 0.7)));
+    return Date.now() + Math.min(isCloud ? 18_000 : 14_000, baseMs + (isCloud ? 6_000 : 3_500));
+  }, []);
+
+  const revokeCloudUrl = useCallback(() => {
+    if (cloudUrlRef.current) {
+      try { URL.revokeObjectURL(cloudUrlRef.current); } catch { /* noop */ }
+      cloudUrlRef.current = null;
     }
   }, []);
 
-  const speakChunk = useCallback(
-    (token: number) => {
-      if (!supported || stoppedRef.current || token !== playTokenRef.current) return;
-      const chunk = chunksRef.current[chunkIndexRef.current];
-      if (!chunk) {
-        activeRef.current = false;
-        stopKeepAlive();
-        setProgress(1);
-        setState("idle");
-        return;
-      }
+  const cleanupCloud = useCallback((abortFetch = false) => {
+    if (abortFetch && cloudAbortRef.current) {
+      try { cloudAbortRef.current.abort(); } catch { /* noop */ }
+    }
+    cloudAbortRef.current = null;
+    if (sourceRef.current === "cloud") sourceRef.current = null;
+    if (cloudAudioRef.current) {
+      try { cloudAudioRef.current.pause(); } catch { /* noop */ }
+      cloudAudioRef.current.src = "";
+      cloudAudioRef.current = null;
+    }
+    revokeCloudUrl();
+  }, [revokeCloudUrl]);
 
-      const latestVoices = getVoices();
-      const pool = latestVoices.length ? latestVoices : voices;
-      const currentPrefs = loadVoicePrefs();
+  const restartCurrentSegment = useCallback((reason: string, fallbackNotice?: string) => {
+    if (!supported || stoppedRef.current || userPausedRef.current) return;
 
-      // Per-language run detection: pick the dominant language of the chunk,
-      // but if it contains both scripts, route to the run's language voice.
-      const runs = splitByLanguage(chunk);
-      const primary = runs[0];
-      const runLang: "ar" | "en" = primary?.lang ?? langPrefix;
+    setDiag((d) => ({
+      ...d,
+      lastError: reason,
+      lastErrorChunkIndex: segmentIndexRef.current,
+      recommendation: fallbackNotice ?? d.recommendation,
+    }));
 
-      // Cloud voice path — when the user picked a Gemini voice for this
-      // language, fetch the whole chunk as one audio file and play it.
-      const cloudVoiceId = runLang === "ar" ? currentPrefs.arCloudVoice : currentPrefs.enCloudVoice;
-      if (cloudVoiceId) {
-        const ac = new AbortController();
-        cloudAbortRef.current = ac;
-        setDiag((d) => ({
-          ...d,
-          voiceName: `Gemini · ${cloudVoiceId}`,
-          voiceURI: `cloud:${cloudVoiceId}`,
-          voiceLang: runLang === "ar" ? "ar-EG" : "en-US",
-          chunkIndex: chunkIndexRef.current,
-          chunkCount: chunksRef.current.length,
-        }));
-        fetchCloudTtsUrl(chunk, cloudVoiceId, runLang, ac.signal)
-          .then((url) => {
-            if (token !== playTokenRef.current || stoppedRef.current) {
-              URL.revokeObjectURL(url);
-              return;
-            }
-            if (cloudUrlRef.current) {
-              try { URL.revokeObjectURL(cloudUrlRef.current); } catch { /* noop */ }
-            }
-            cloudUrlRef.current = url;
-            const audio = new Audio(url);
-            audio.playbackRate = Math.min(1.25, speedRef.current * 1.08);
-            cloudAudioRef.current = audio;
-            audio.onplay = () => {
-              if (token !== playTokenRef.current) return;
-              startedRef.current = true;
-              activeRef.current = true;
-              setNotice(null);
-              setState("playing");
-              if (watchdogRef.current != null) { window.clearTimeout(watchdogRef.current); watchdogRef.current = null; }
-            };
-            audio.onended = () => {
-              if (token !== playTokenRef.current || stoppedRef.current) return;
-              if (cloudUrlRef.current) {
-                try { URL.revokeObjectURL(cloudUrlRef.current); } catch { /* noop */ }
-                cloudUrlRef.current = null;
-              }
-              cloudAudioRef.current = null;
-              chunkIndexRef.current += 1;
-              setProgress(chunksRef.current.length ? chunkIndexRef.current / chunksRef.current.length : 1);
-              window.setTimeout(() => speakChunk(token), 40);
-            };
-            audio.onerror = () => {
-              if (token !== playTokenRef.current) return;
-              setDiag((d) => ({
-                ...d,
-                lastError: "cloud-playback-failed",
-                lastErrorChunkIndex: chunkIndexRef.current,
-                recommendation: copy.recoSynthFailed,
-              }));
-              activeRef.current = false;
-              setState("idle");
-              setNotice(copy.recoSynthFailed);
-            };
-            audio.play().catch(() => {
-              setNotice(copy.recoSynthFailed);
-              setState("idle");
-            });
-          })
-          .catch((err) => {
-            if ((err as Error).name === "AbortError") return;
-            if (token !== playTokenRef.current) return;
-            setDiag((d) => ({
-              ...d,
-              lastError: "cloud-tts-failed",
-              lastErrorChunkIndex: chunkIndexRef.current,
-              recommendation: copy.recoNetwork,
-            }));
-            activeRef.current = false;
-            setState("idle");
-            setNotice(copy.recoNetwork);
-          });
-        return;
-      }
+    if (recoveryAttemptsRef.current >= 2) {
+      activeRef.current = false;
+      cleanupCloud(true);
+      try { window.speechSynthesis.cancel(); } catch { /* noop */ }
+      setPlaybackState("idle");
+      if (fallbackNotice) setNotice(fallbackNotice);
+      return;
+    }
 
-      const selectedVoice = pickBestVoice(pool, runLang, currentPrefs);
+    recoveryAttemptsRef.current += 1;
+    playTokenRef.current += 1;
+    const token = playTokenRef.current;
+    lastActivityRef.current = Date.now();
+    cleanupCloud(true);
+    try { window.speechSynthesis.cancel(); } catch { /* noop */ }
 
-      // Pre-flight: if ANY run in this chunk lacks a matching device voice,
-      // hand the whole message to cloud TTS. Otherwise mixed-language replies
-      // silently drop the unsupported script (e.g. an English voice asked to
-      // speak Arabic emits only the Latin words).
-      const missingVoiceForRun = runs.some((r) => {
-        const v = pickBestVoice(pool, r.lang, currentPrefs);
-        return !v || !v.lang.toLowerCase().startsWith(r.lang);
-      });
-      if (missingVoiceForRun) {
-        setNotice(copy.voiceUnavailable);
-      }
+    window.setTimeout(() => {
+      if (token !== playTokenRef.current || stoppedRef.current || userPausedRef.current) return;
+      playSegmentRef.current(token);
+    }, 120);
+  }, [cleanupCloud, setPlaybackState, supported]);
 
-      const utterance = new SpeechSynthesisUtterance(primary?.text ?? chunk);
-      utterance.lang = selectedVoice?.lang || (runLang === "ar" ? "ar-SA" : "en-US");
-      // Brighter, more energetic delivery — a touch quicker and higher pitch.
-      utterance.rate = Math.min(1.25, speedRef.current * 1.08);
-      utterance.pitch = runLang === "ar" ? 1.18 : 1.22;
-      utterance.volume = 1;
-      if (selectedVoice && selectedVoice.lang.toLowerCase().startsWith(runLang)) {
-        utterance.voice = selectedVoice;
-      }
+  const advanceToNextSegment = useCallback((token: number) => {
+    recoveryAttemptsRef.current = 0;
+    segmentIndexRef.current += 1;
+    setProgress(segmentsRef.current.length ? segmentIndexRef.current / segmentsRef.current.length : 1);
 
+    if (segmentIndexRef.current >= segmentsRef.current.length) {
+      activeRef.current = false;
+      cleanupCloud(false);
+      setProgress(1);
+      setPlaybackState("idle");
+      return;
+    }
 
+    lastActivityRef.current = Date.now();
+    window.setTimeout(() => {
+      if (token !== playTokenRef.current || stoppedRef.current || userPausedRef.current) return;
+      playSegmentRef.current(token);
+    }, 60);
+  }, [cleanupCloud, setPlaybackState]);
 
-      // If the chunk had multiple language runs, queue the remainder as
-      // separate utterances so each run gets the right voice — and only
-      // advance the chunk index when the last run finishes.
-      const extraRuns = runs.slice(1);
-      let runsRemaining = extraRuns.length;
+  const playSegment = useCallback((token: number) => {
+    if (!supported || stoppedRef.current || token !== playTokenRef.current) return;
+
+    const segment = segmentsRef.current[segmentIndexRef.current];
+    if (!segment) {
+      activeRef.current = false;
+      cleanupCloud(false);
+      setProgress(1);
+      setPlaybackState("idle");
+      return;
+    }
+
+    const rate = Math.min(1.25, speedRef.current * 1.08);
+    const pitch = segment.lang === "ar" ? 1.18 : 1.22;
+    const latestVoices = getVoices();
+    const pool = latestVoices.length ? latestVoices : voices;
+    const currentPrefs = loadVoicePrefs();
+    const cloudVoiceId = segment.lang === "ar" ? currentPrefs.arCloudVoice : currentPrefs.enCloudVoice;
+    const selectedVoice = pickBestVoice(pool, segment.lang, currentPrefs);
+
+    lastActivityRef.current = Date.now();
+    segmentDeadlineRef.current = estimateSegmentDeadline(segment, rate, !!cloudVoiceId);
+
+    if (cloudVoiceId) {
+      cleanupCloud(true);
+      sourceRef.current = "cloud";
+      const ac = new AbortController();
+      cloudAbortRef.current = ac;
 
       setDiag((d) => ({
         ...d,
-        voiceName: selectedVoice?.name ?? null,
-        voiceURI: selectedVoice?.voiceURI ?? null,
-        voiceLang: utterance.lang,
-        chunkIndex: chunkIndexRef.current,
-        chunkCount: chunksRef.current.length,
+        voiceName: `Gemini · ${cloudVoiceId}`,
+        voiceURI: `cloud:${cloudVoiceId}`,
+        voiceLang: segment.lang === "ar" ? "ar-EG" : "en-US",
+        chunkIndex: segmentIndexRef.current,
+        chunkCount: segmentsRef.current.length,
       }));
 
-      utterance.onstart = () => {
-        if (token !== playTokenRef.current) return;
-        startedRef.current = true;
-        if (watchdogRef.current != null) { window.clearTimeout(watchdogRef.current); watchdogRef.current = null; }
-        activeRef.current = true;
-        setNotice(null);
-        setState("playing");
-        startKeepAlive();
-      };
-      utterance.onend = () => {
-        if (token !== playTokenRef.current || stoppedRef.current) return;
-        if (runsRemaining > 0) {
-          // Queue the next language run for this same chunk.
-          const next = extraRuns[extraRuns.length - runsRemaining];
-          runsRemaining -= 1;
-          const v = pickBestVoice(pool, next.lang, currentPrefs);
-          const u = new SpeechSynthesisUtterance(next.text);
-          u.lang = v?.lang || (next.lang === "ar" ? "ar-SA" : "en-US");
-          u.rate = Math.min(1.25, speedRef.current * 1.08);
-          u.pitch = next.lang === "ar" ? 1.18 : 1.22;
-          u.volume = 1;
-          if (v && v.lang.toLowerCase().startsWith(next.lang)) u.voice = v;
+      fetchCloudTtsUrl(segment.text, cloudVoiceId, segment.lang, ac.signal)
+        .then((url) => {
+          if (token !== playTokenRef.current || stoppedRef.current || userPausedRef.current) {
+            URL.revokeObjectURL(url);
+            return;
+          }
 
-          // Re-bind to the same handlers so the chain advances correctly.
-          u.onend = utterance.onend;
-          u.onerror = utterance.onerror;
-          window.speechSynthesis.speak(u);
-          return;
-        }
-        chunkIndexRef.current += 1;
-        setProgress(chunksRef.current.length ? chunkIndexRef.current / chunksRef.current.length : 1);
-        // Small gap to avoid the Chrome cancel/queue race.
-        window.setTimeout(() => speakChunk(token), 60);
-      };
-      utterance.onerror = (event) => {
-        if (token !== playTokenRef.current) return;
-        const code = (event.error as string) || "unknown";
-        const reco = recommendationFor(code, !!selectedVoice);
-        setDiag((d) => ({
-          ...d,
-          lastError: code,
-          lastErrorChunkIndex: chunkIndexRef.current,
-          recommendation: reco,
-        }));
-        if (code === "interrupted" || code === "canceled") return;
-        // Hard synthesis problems stay local: show diagnostics and stop cleanly.
-        const hardFail = ["synthesis-failed", "synthesis-unavailable", "audio-busy", "audio-hardware", "language-unavailable", "voice-unavailable", "network"].includes(code);
-        if (hardFail) {
-          activeRef.current = false;
-          stopKeepAlive();
-          setState("idle");
-          setNotice(reco ?? copy.voiceUnavailable);
-          return;
-        }
-        // Try to keep going — skip the bad chunk.
-        chunkIndexRef.current += 1;
-        if (chunkIndexRef.current >= chunksRef.current.length) {
-          activeRef.current = false;
-          stopKeepAlive();
-          setState("idle");
-          if (!startedRef.current) setNotice(copy.voiceUnavailable);
-          return;
-        }
-        window.setTimeout(() => speakChunk(token), 60);
-      };
+          cloudUrlRef.current = url;
+          const audio = new Audio(url);
+          audio.preload = "auto";
+          audio.playbackRate = rate;
+          cloudAudioRef.current = audio;
 
+          audio.onplay = () => {
+            if (token !== playTokenRef.current) return;
+            activeRef.current = true;
+            lastActivityRef.current = Date.now();
+            lastAudioTimeRef.current = audio.currentTime;
+            setNotice(null);
+            setPlaybackState("playing");
+          };
+          audio.ontimeupdate = () => {
+            lastAudioTimeRef.current = audio.currentTime;
+            lastActivityRef.current = Date.now();
+          };
+          audio.onpause = () => {
+            if (token !== playTokenRef.current || userPausedRef.current || audio.ended) return;
+            restartCurrentSegment("cloud-paused", copy.recoSynthFailed);
+          };
+          audio.onended = () => {
+            if (token !== playTokenRef.current || stoppedRef.current || userPausedRef.current) return;
+            cleanupCloud(false);
+            advanceToNextSegment(token);
+          };
+          audio.onerror = () => {
+            if (token !== playTokenRef.current || userPausedRef.current) return;
+            restartCurrentSegment("cloud-playback-failed", copy.recoNetwork);
+          };
+
+          audio.play().catch(() => {
+            restartCurrentSegment("cloud-play-rejected", copy.recoNetwork);
+          });
+        })
+        .catch((err) => {
+          if ((err as Error).name === "AbortError") return;
+          if (token !== playTokenRef.current || userPausedRef.current) return;
+          restartCurrentSegment("cloud-tts-failed", copy.recoNetwork);
+        });
+      return;
+    }
+
+    sourceRef.current = "local";
+
+    const utterance = new SpeechSynthesisUtterance(segment.text);
+    utterance.lang = selectedVoice?.lang || (segment.lang === "ar" ? "ar-SA" : "en-US");
+    utterance.rate = rate;
+    utterance.pitch = pitch;
+    utterance.volume = 1;
+    if (selectedVoice && selectedVoice.lang.toLowerCase().startsWith(segment.lang)) {
+      utterance.voice = selectedVoice;
+    } else if (!selectedVoice) {
+      setNotice(copy.voiceUnavailable);
+    }
+
+    setDiag((d) => ({
+      ...d,
+      voiceName: selectedVoice?.name ?? null,
+      voiceURI: selectedVoice?.voiceURI ?? null,
+      voiceLang: utterance.lang,
+      chunkIndex: segmentIndexRef.current,
+      chunkCount: segmentsRef.current.length,
+    }));
+
+    utterance.onstart = () => {
+      if (token !== playTokenRef.current) return;
+      activeRef.current = true;
+      lastActivityRef.current = Date.now();
+      setNotice(null);
+      setPlaybackState("playing");
+    };
+    utterance.onboundary = () => {
+      lastActivityRef.current = Date.now();
+    };
+    utterance.onresume = () => {
+      lastActivityRef.current = Date.now();
+    };
+    utterance.onend = () => {
+      if (token !== playTokenRef.current || stoppedRef.current || userPausedRef.current) return;
+      advanceToNextSegment(token);
+    };
+    utterance.onerror = (event) => {
+      if (token !== playTokenRef.current) return;
+      if (userPausedRef.current) return;
+
+      const code = (event.error as string) || "unknown";
+      const reco = recommendationFor(code, !!selectedVoice);
+
+      setDiag((d) => ({
+        ...d,
+        lastError: code,
+        lastErrorChunkIndex: segmentIndexRef.current,
+        recommendation: reco,
+      }));
+
+      const hardFail = ["synthesis-failed", "synthesis-unavailable", "audio-busy", "audio-hardware", "language-unavailable", "voice-unavailable", "network"].includes(code);
+      if (hardFail) {
+        activeRef.current = false;
+        setPlaybackState("idle");
+        setNotice(reco ?? copy.voiceUnavailable);
+        return;
+      }
+
+      restartCurrentSegment(code, reco ?? copy.recoInterrupted);
+    };
+
+    try {
       window.speechSynthesis.speak(utterance);
-    },
-    [supported, voices, langPrefix, startKeepAlive, stopKeepAlive, recommendationFor, copy.voiceUnavailable, copy.recoSynthFailed, copy.recoNetwork],
-  );
+    } catch {
+      restartCurrentSegment("speech-start-failed", copy.recoSynthFailed);
+    }
+  }, [advanceToNextSegment, cleanupCloud, copy.recoInterrupted, copy.recoNetwork, copy.recoSynthFailed, copy.voiceUnavailable, estimateSegmentDeadline, recommendationFor, setPlaybackState, supported, voices]);
+
+  playSegmentRef.current = playSegment;
 
   const stop = useCallback(
     (silent = false) => {
       stoppedRef.current = true;
+      userPausedRef.current = false;
       activeRef.current = false;
       playTokenRef.current += 1;
-      chunksRef.current = [];
-      chunkIndexRef.current = 0;
-      stopKeepAlive();
-      if (watchdogRef.current != null) { window.clearTimeout(watchdogRef.current); watchdogRef.current = null; }
+      segmentsRef.current = [];
+      segmentIndexRef.current = 0;
+      recoveryAttemptsRef.current = 0;
+      sourceRef.current = null;
       setProgress(0);
+      setNotice(null);
       if (supported) {
         try { window.speechSynthesis.cancel(); } catch { /* noop */ }
       }
-      if (cloudAbortRef.current) {
-        try { cloudAbortRef.current.abort(); } catch { /* noop */ }
-        cloudAbortRef.current = null;
-      }
-      if (cloudAudioRef.current) {
-        try { cloudAudioRef.current.pause(); } catch { /* noop */ }
-        cloudAudioRef.current = null;
-      }
-      if (cloudUrlRef.current) {
-        try { URL.revokeObjectURL(cloudUrlRef.current); } catch { /* noop */ }
-        cloudUrlRef.current = null;
-      }
-      if (!silent) setState("idle");
+      cleanupCloud(true);
+      if (!silent) setPlaybackState("idle");
     },
-    [supported, stopKeepAlive],
+    [cleanupCloud, setPlaybackState, supported],
   );
 
 
   const createAndPlay = useCallback(() => {
     if (!supported || !speechText.trim()) return;
-    const chunks = splitForSpeech(speechText);
-    if (!chunks.length) return;
+    const segments = buildSegments(speechText);
+    if (!segments.length) return;
 
-    // Reset state cleanly.
     playTokenRef.current += 1;
     const token = playTokenRef.current;
     stoppedRef.current = false;
+    userPausedRef.current = false;
     activeRef.current = true;
-    chunksRef.current = chunks;
-    chunkIndexRef.current = 0;
-    startedRef.current = false;
-    if (watchdogRef.current != null) { window.clearTimeout(watchdogRef.current); watchdogRef.current = null; }
+    segmentsRef.current = segments;
+    segmentIndexRef.current = 0;
+    recoveryAttemptsRef.current = 0;
+    lastActivityRef.current = Date.now();
     setProgress(0);
     setNotice(null);
-    setDiag((d) => ({ ...d, lastError: null, lastErrorChunkIndex: null, recommendation: null, chunkIndex: 0, chunkCount: chunks.length }));
+    setDiag((d) => ({ ...d, lastError: null, lastErrorChunkIndex: null, recommendation: null, chunkIndex: 0, chunkCount: segments.length }));
 
     window.dispatchEvent(new CustomEvent(VOICE_OUTPUT_START, { detail: { id: instanceIdRef.current } }));
-
-    // Astra policy: voice output stays fully local through the browser/device speech engine.
-
-    // Chrome has a known race: speak() right after cancel() can swallow the
-    // first utterance. Give the engine a tick to drain before queueing.
     try { window.speechSynthesis.cancel(); } catch { /* noop */ }
-    if (cloudAbortRef.current) { try { cloudAbortRef.current.abort(); } catch { /* noop */ } cloudAbortRef.current = null; }
-    if (cloudAudioRef.current) { try { cloudAudioRef.current.pause(); } catch { /* noop */ } cloudAudioRef.current = null; }
-    if (cloudUrlRef.current) { try { URL.revokeObjectURL(cloudUrlRef.current); } catch { /* noop */ } cloudUrlRef.current = null; }
+    cleanupCloud(true);
+    setPlaybackState("playing");
     window.setTimeout(() => {
-      if (token === playTokenRef.current) speakChunk(token);
+      if (token === playTokenRef.current && !stoppedRef.current) playSegmentRef.current(token);
     }, 120);
-
-    // Watchdog: if no utterance has actually started after ~2.2s, stop cleanly.
-    watchdogRef.current = window.setTimeout(() => {
-      if (token !== playTokenRef.current) return;
-      if (startedRef.current) return;
-      activeRef.current = false;
-      setState("idle");
-      setNotice(copy.voiceUnavailable);
-    }, 2200);
-  }, [copy.voiceUnavailable, speechText, speakChunk, supported]);
+  }, [buildSegments, cleanupCloud, setPlaybackState, speechText, supported]);
 
   const playOrResume = () => {
     if (!supported) return;
     if (state === "paused") {
-      // Resume cloud audio if it's the active source.
       if (cloudAudioRef.current) {
+        userPausedRef.current = false;
+        activeRef.current = true;
+        lastActivityRef.current = Date.now();
+        setPlaybackState("playing");
         cloudAudioRef.current.play().catch(() => undefined);
-        setState("playing");
         return;
       }
-      // Chrome's speechSynthesis.resume() is unreliable after a pause —
-      // it often returns without actually speaking. Try resume first, then
-      // verify after a tick; if nothing is speaking, restart from the
-      // current chunk so the user always hears the rest of the message.
-      try { window.speechSynthesis.resume(); } catch { /* noop */ }
-      setState("playing");
+
+      userPausedRef.current = false;
+      activeRef.current = true;
+      playTokenRef.current += 1;
+      const token = playTokenRef.current;
+      lastActivityRef.current = Date.now();
+      setPlaybackState("playing");
       window.setTimeout(() => {
-        if (stoppedRef.current) return;
-        const synth = window.speechSynthesis;
-        if (synth.speaking && !synth.paused) {
-          startKeepAlive();
-          return;
-        }
-        // Resume failed — re-speak from the current chunk onward.
-        try { synth.cancel(); } catch { /* noop */ }
-        playTokenRef.current += 1;
-        const token = playTokenRef.current;
-        stoppedRef.current = false;
-        activeRef.current = true;
-        window.setTimeout(() => {
-          if (token === playTokenRef.current) speakChunk(token);
-        }, 120);
-      }, 200);
+        if (token === playTokenRef.current && !stoppedRef.current) playSegmentRef.current(token);
+      }, 120);
       return;
     }
     createAndPlay();
   };
   const pause = () => {
     if (!supported) return;
-    // Stop the keep-alive pump first — otherwise its pause/resume cycle
-    // fights with the user's pause and the audio resumes on its own.
-    stopKeepAlive();
+    userPausedRef.current = true;
+    activeRef.current = false;
     if (cloudAudioRef.current && !cloudAudioRef.current.paused) {
       try { cloudAudioRef.current.pause(); } catch { /* noop */ }
+      setPlaybackState("paused");
+      return;
     }
-    try { window.speechSynthesis.pause(); } catch { /* noop */ }
-    setState("paused");
+    try { window.speechSynthesis.cancel(); } catch { /* noop */ }
+    setPlaybackState("paused");
   };
   const replay = () => createAndPlay();
 
@@ -580,42 +580,90 @@ export function VoiceOutput({
   }, [supported]);
 
   useEffect(() => {
+    if (!supported) return;
+
+    const timer = window.setInterval(() => {
+      if (stoppedRef.current || userPausedRef.current || stateRef.current !== "playing") return;
+      const segment = segmentsRef.current[segmentIndexRef.current];
+      if (!segment) return;
+
+      const now = Date.now();
+      if (sourceRef.current === "cloud") {
+        if (!cloudAudioRef.current) {
+          if (now > segmentDeadlineRef.current || now - lastActivityRef.current > 6_000) {
+            restartCurrentSegment("cloud-fetch-stalled", copy.recoNetwork);
+          }
+          return;
+        }
+
+        const audio = cloudAudioRef.current;
+        if (audio.ended) return;
+
+        if (Math.abs(audio.currentTime - lastAudioTimeRef.current) > 0.01) {
+          lastAudioTimeRef.current = audio.currentTime;
+          lastActivityRef.current = now;
+        }
+
+        if (audio.paused && now - lastActivityRef.current > 900) {
+          restartCurrentSegment("cloud-paused", copy.recoSynthFailed);
+          return;
+        }
+
+        if (now > segmentDeadlineRef.current || now - lastActivityRef.current > 3_500) {
+          restartCurrentSegment("cloud-stalled", copy.recoSynthFailed);
+        }
+        return;
+      }
+
+      const synth = window.speechSynthesis;
+      if (synth.speaking || synth.pending) {
+        if (now > segmentDeadlineRef.current) {
+          restartCurrentSegment("speech-timeout", copy.recoInterrupted);
+        }
+        return;
+      }
+
+      if (now - lastActivityRef.current > 2_200) {
+        restartCurrentSegment("speech-stalled", copy.recoInterrupted);
+      }
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [copy.recoInterrupted, copy.recoNetwork, copy.recoSynthFailed, restartCurrentSegment, supported]);
+
+  useEffect(() => {
     const onOther = (event: Event) => {
       const detail = (event as CustomEvent<{ id?: number }>).detail;
       if (detail?.id === instanceIdRef.current) return;
       if (!activeRef.current) return;
-      stoppedRef.current = true;
-      activeRef.current = false;
-      stopKeepAlive();
-      setState("idle");
-      setProgress(0);
+      stop(true);
     };
     window.addEventListener(VOICE_OUTPUT_START, onOther);
     return () => window.removeEventListener(VOICE_OUTPUT_START, onOther);
-  }, [stopKeepAlive]);
+  }, [stop]);
 
   // Stop on unmount.
   useEffect(() => () => { stop(true); }, [stop]);
 
   useEffect(() => {
     speedRef.current = speed;
-    // Only restart playback when SPEED actually changed. Without this guard
-    // the effect also fires on `state` transitions (idle→playing), which
-    // cancelled the running utterance and re-spoke chunk 0 — the user
-    // heard the first word ("Hello") twice.
     if (prevSpeedRef.current === speed) return;
     prevSpeedRef.current = speed;
-    if (state === "playing" && activeRef.current) {
-      const remaining = chunksRef.current.slice(chunkIndexRef.current);
-      chunksRef.current = remaining;
-      chunkIndexRef.current = 0;
+    if (cloudAudioRef.current) {
+      cloudAudioRef.current.playbackRate = Math.min(1.25, speed * 1.08);
+    }
+    if (stateRef.current === "playing" && activeRef.current) {
       playTokenRef.current += 1;
       const token = playTokenRef.current;
-      stoppedRef.current = false;
+      cleanupCloud(false);
       try { window.speechSynthesis.cancel(); } catch { /* noop */ }
-      window.setTimeout(() => { if (token === playTokenRef.current) speakChunk(token); }, 120);
+      window.setTimeout(() => {
+        if (token === playTokenRef.current && !stoppedRef.current && !userPausedRef.current) {
+          playSegmentRef.current(token);
+        }
+      }, 120);
     }
-  }, [speed, state, speakChunk]);
+  }, [cleanupCloud, speed]);
 
   if (!supported || !speechText.trim()) return null;
 
