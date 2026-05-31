@@ -155,6 +155,7 @@ export function VoiceOutput({
   const cloudAudioRef = useRef<HTMLAudioElement | null>(null);
   const cloudUrlRef = useRef<string | null>(null);
   const cloudAbortRef = useRef<AbortController | null>(null);
+  const sourceRef = useRef<"local" | "cloud" | null>(null);
   const lastActivityRef = useRef(0);
   const lastAudioTimeRef = useRef(0);
   const segmentDeadlineRef = useRef(0);
@@ -249,6 +250,7 @@ export function VoiceOutput({
       try { cloudAbortRef.current.abort(); } catch { /* noop */ }
     }
     cloudAbortRef.current = null;
+    if (sourceRef.current === "cloud") sourceRef.current = null;
     if (cloudAudioRef.current) {
       try { cloudAudioRef.current.pause(); } catch { /* noop */ }
       cloudAudioRef.current.src = "";
@@ -333,6 +335,7 @@ export function VoiceOutput({
     segmentDeadlineRef.current = estimateSegmentDeadline(segment, rate, !!cloudVoiceId);
 
     if (cloudVoiceId) {
+      sourceRef.current = "cloud";
       cleanupCloud(true);
       const ac = new AbortController();
       cloudAbortRef.current = ac;
@@ -396,6 +399,8 @@ export function VoiceOutput({
         });
       return;
     }
+
+    sourceRef.current = "local";
 
     const utterance = new SpeechSynthesisUtterance(segment.text);
     utterance.lang = selectedVoice?.lang || (segment.lang === "ar" ? "ar-SA" : "en-US");
@@ -477,6 +482,7 @@ export function VoiceOutput({
       segmentsRef.current = [];
       segmentIndexRef.current = 0;
       recoveryAttemptsRef.current = 0;
+      sourceRef.current = null;
       setProgress(0);
       setNotice(null);
       if (supported) {
@@ -582,7 +588,14 @@ export function VoiceOutput({
       if (!segment) return;
 
       const now = Date.now();
-      if (cloudAudioRef.current) {
+      if (sourceRef.current === "cloud") {
+        if (!cloudAudioRef.current) {
+          if (now > segmentDeadlineRef.current || now - lastActivityRef.current > 6_000) {
+            restartCurrentSegment("cloud-fetch-stalled", copy.recoNetwork);
+          }
+          return;
+        }
+
         const audio = cloudAudioRef.current;
         if (audio.ended) return;
 
@@ -610,13 +623,13 @@ export function VoiceOutput({
         return;
       }
 
-      if (now - lastActivityRef.current > 900) {
+      if (now - lastActivityRef.current > 2_200) {
         restartCurrentSegment("speech-stalled", copy.recoInterrupted);
       }
-    }, 1200);
+    }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [copy.recoInterrupted, copy.recoSynthFailed, restartCurrentSegment, supported]);
+  }, [copy.recoInterrupted, copy.recoNetwork, copy.recoSynthFailed, restartCurrentSegment, supported]);
 
   useEffect(() => {
     const onOther = (event: Event) => {
