@@ -4,12 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Check, Plus, Trash2 } from "lucide-react";
+import { Check, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
   listTasks,
   addTask as addTaskStore,
   toggleTask as toggleTaskStore,
   deleteTask as deleteTaskStore,
+  updateTask as updateTaskStore,
   type Task,
   type Priority,
 } from "@/lib/astra-tasks";
@@ -21,8 +22,12 @@ export function TasksPage() {
   const [desc, setDesc] = useState("");
   const [priority, setPriority] = useState<Priority>("medium");
 
-  useEffect(() => { setItems(listTasks()); }, []);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [editPriority, setEditPriority] = useState<Priority>("medium");
 
+  useEffect(() => { setItems(listTasks()); }, []);
   const refresh = () => setItems(listTasks());
 
   const add = () => {
@@ -33,6 +38,20 @@ export function TasksPage() {
   };
   const toggle = (id: string) => { toggleTaskStore(id); refresh(); };
   const del = (id: string) => { deleteTaskStore(id); refresh(); };
+
+  const startEdit = (task: Task) => {
+    setEditId(task.id);
+    setEditTitle(task.title);
+    setEditDesc(task.description ?? "");
+    setEditPriority(task.priority);
+  };
+  const cancelEdit = () => setEditId(null);
+  const saveEdit = () => {
+    if (!editId) return;
+    updateTaskStore(editId, { title: editTitle, description: editDesc, priority: editPriority });
+    setEditId(null);
+    refresh();
+  };
 
   const priorityColor = (p: Priority) =>
     p === "urgent" ? "bg-destructive/20 text-destructive" : p === "high" ? "bg-electric/20 text-electric" : p === "medium" ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground";
@@ -66,21 +85,50 @@ export function TasksPage() {
             {lang === "ar" ? "لا توجد مهام بعد. أضف أول مهمة بالأعلى." : "No tasks yet. Add your first one above."}
           </div>
         )}
-        {items.map((task) => (
-          <div key={task.id} className="group flex items-start gap-3 rounded-xl glass p-4 transition hover:border-electric/30">
-            <button onClick={() => toggle(task.id)} className={`mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${task.status === "done" ? "bg-electric border-electric" : "border-border"}`}>
-              {task.status === "done" && <Check className="h-3.5 w-3.5 text-background" />}
-            </button>
-            <div className="min-w-0 flex-1">
-              <div className={`text-sm font-medium ${task.status === "done" ? "text-muted-foreground line-through" : ""}`}>{task.title}</div>
-              {task.description && <div className="mt-1 text-sm text-muted-foreground">{task.description}</div>}
-              <span className={`mt-2 inline-block rounded-md px-2 py-0.5 text-xs ${priorityColor(task.priority)}`}>{t(task.priority)}</span>
+        {items.map((task) => {
+          const isEditing = editId === task.id;
+          return (
+            <div key={task.id} className="flex items-start gap-3 rounded-xl glass p-4 transition hover:border-electric/30">
+              <button onClick={() => toggle(task.id)} className={`mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${task.status === "done" ? "bg-electric border-electric" : "border-border"}`}>
+                {task.status === "done" && <Check className="h-3.5 w-3.5 text-background" />}
+              </button>
+              <div className="min-w-0 flex-1">
+                {isEditing ? (
+                  <div className="space-y-2">
+                    <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} placeholder={t("title")} />
+                    <Textarea value={editDesc} onChange={(e) => setEditDesc(e.target.value)} placeholder={t("description")} rows={2} />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Select value={editPriority} onValueChange={(v) => setEditPriority(v as Priority)}>
+                        <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {(["low","medium","high","urgent"] as const).map(p => <SelectItem key={p} value={p}>{t(p)}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      <Button size="sm" onClick={saveEdit} className="glow-electric"><Check className="me-1 h-3.5 w-3.5" />{t("save")}</Button>
+                      <Button size="sm" variant="ghost" onClick={cancelEdit}><X className="me-1 h-3.5 w-3.5" />{t("cancel")}</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className={`text-sm font-medium ${task.status === "done" ? "text-muted-foreground line-through" : ""}`}>{task.title}</div>
+                    {task.description && <div className="mt-1 text-sm text-muted-foreground whitespace-pre-wrap">{task.description}</div>}
+                    <span className={`mt-2 inline-block rounded-md px-2 py-0.5 text-xs ${priorityColor(task.priority)}`}>{t(task.priority)}</span>
+                  </>
+                )}
+              </div>
+              {!isEditing && (
+                <div className="flex shrink-0 items-center gap-1">
+                  <button onClick={() => startEdit(task)} className="rounded-md p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground" aria-label={t("edit")}>
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  <button onClick={() => del(task.id)} className="rounded-md p-1.5 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive" aria-label={t("delete")}>
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
             </div>
-            <button onClick={() => del(task.id)} className="opacity-0 transition group-hover:opacity-100" aria-label="Delete">
-              <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
