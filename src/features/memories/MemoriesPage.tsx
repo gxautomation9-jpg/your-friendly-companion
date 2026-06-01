@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Brain, Plus, Trash2, Sparkles, User } from "lucide-react";
-import { addManualMemory, clearAuto, deleteMemory, listMemories, type Memory } from "@/lib/astra-memory";
+import { Brain, Check, Pencil, Plus, Sparkles, Trash2, User, X } from "lucide-react";
+import { addManualMemory, clearAuto, deleteMemory, listMemories, updateMemory, type Memory } from "@/lib/astra-memory";
 
 export function MemoriesPage() {
   const { t, lang } = useI18n();
@@ -11,8 +11,11 @@ export function MemoriesPage() {
   const [category, setCategory] = useState("note");
   const [content, setContent] = useState("");
 
-  useEffect(() => { setItems(listMemories()); }, []);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editCategory, setEditCategory] = useState("");
+  const [editContent, setEditContent] = useState("");
 
+  useEffect(() => { setItems(listMemories()); }, []);
   const refresh = () => setItems(listMemories());
 
   const add = () => {
@@ -23,6 +26,19 @@ export function MemoriesPage() {
   };
   const del = (id: string) => { deleteMemory(id); refresh(); };
   const clearAutoFacts = () => { clearAuto(); refresh(); };
+
+  const startEdit = (m: Memory) => {
+    setEditId(m.id);
+    setEditCategory(m.category);
+    setEditContent(m.content);
+  };
+  const cancelEdit = () => setEditId(null);
+  const saveEdit = () => {
+    if (!editId) return;
+    updateMemory(editId, { category: editCategory, content: editContent });
+    setEditId(null);
+    refresh();
+  };
 
   const autoCount = items.filter((m) => m.kind === "auto").length;
 
@@ -61,20 +77,43 @@ export function MemoriesPage() {
             {lang === "ar" ? "لا توجد ذكريات بعد." : "No memories yet."}
           </div>
         )}
-        {items.map((m) => (
-          <div key={m.id} className="group flex items-start gap-3 rounded-xl glass p-4">
-            <span className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-medium ${
-              m.kind === "auto" ? "bg-electric/15 text-electric" : "bg-primary/15 text-primary"
-            }`}>
-              {m.kind === "auto" ? <Sparkles className="h-3 w-3" /> : <User className="h-3 w-3" />}
-              {m.category}
-            </span>
-            <div className="flex-1 text-sm">{m.content}</div>
-            <button onClick={() => del(m.id)} className="opacity-0 transition group-hover:opacity-100" aria-label="Delete">
-              <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-            </button>
-          </div>
-        ))}
+        {items.map((m) => {
+          const isEditing = editId === m.id;
+          return (
+            <div key={m.id} className="flex items-start gap-3 rounded-xl glass p-4">
+              <span className={`inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-medium ${
+                m.kind === "auto" ? "bg-electric/15 text-electric" : "bg-primary/15 text-primary"
+              }`}>
+                {m.kind === "auto" ? <Sparkles className="h-3 w-3" /> : <User className="h-3 w-3" />}
+                {isEditing ? null : m.category}
+              </span>
+              <div className="min-w-0 flex-1">
+                {isEditing ? (
+                  <div className="space-y-2">
+                    <Input value={editCategory} onChange={(e) => setEditCategory(e.target.value)} placeholder={lang === "ar" ? "التصنيف" : "Category"} />
+                    <Input value={editContent} onChange={(e) => setEditContent(e.target.value)} placeholder={lang === "ar" ? "المحتوى" : "Content"} />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button size="sm" onClick={saveEdit} className="glow-electric"><Check className="me-1 h-3.5 w-3.5" />{t("save")}</Button>
+                      <Button size="sm" variant="ghost" onClick={cancelEdit}><X className="me-1 h-3.5 w-3.5" />{t("cancel")}</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-sm whitespace-pre-wrap">{m.content}</div>
+                )}
+              </div>
+              {!isEditing && (
+                <div className="flex shrink-0 items-center gap-1">
+                  <button onClick={() => startEdit(m)} className="rounded-md p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground" aria-label={t("edit")}>
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  <button onClick={() => del(m.id)} className="rounded-md p-1.5 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive" aria-label={t("delete")}>
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
