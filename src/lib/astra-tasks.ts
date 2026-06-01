@@ -67,6 +67,15 @@ export function toggleTask(id: string) {
   persist(listTasks().map((t) => (t.id === id ? { ...t, status: t.status === "done" ? "todo" : "done" } : t)));
 }
 
+export function updateTask(id: string, patch: { title?: string; description?: string | null; priority?: Priority }) {
+  persist(listTasks().map((t) => (t.id === id ? {
+    ...t,
+    title: patch.title !== undefined ? patch.title.trim() || t.title : t.title,
+    description: patch.description !== undefined ? (patch.description?.trim() || null) : t.description,
+    priority: patch.priority ?? t.priority,
+  } : t)));
+}
+
 export function deleteTask(id: string) {
   persist(listTasks().filter((t) => t.id !== id));
 }

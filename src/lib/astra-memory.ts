@@ -67,6 +67,14 @@ export function deleteMemory(id: string) {
   persist(listMemories().filter((m) => m.id !== id));
 }
 
+export function updateMemory(id: string, patch: { category?: string; content?: string }) {
+  persist(listMemories().map((m) => (m.id === id ? {
+    ...m,
+    category: patch.category !== undefined ? (patch.category.trim() || m.category) : m.category,
+    content: patch.content !== undefined ? (patch.content.trim() || m.content) : m.content,
+  } : m)));
+}
+
 export function clearAuto() {
   persist(listMemories().filter((m) => m.kind !== "auto"));
 }
