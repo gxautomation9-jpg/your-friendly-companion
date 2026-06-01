@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { AstraLogo } from "./AstraLogo";
 import { useI18n } from "@/lib/i18n";
 import { Button } from "./ui/button";
-import { Brain, CheckSquare, Globe, MessageSquare, Settings, Palette } from "lucide-react";
+import { BookOpen, Brain, CheckSquare, Globe, MessageSquare, Settings, Palette } from "lucide-react";
 import { useEffect, useState } from "react";
 import { loadTheme, setTheme as applyAstraTheme, type AstraTheme } from "@/lib/theme";
 
@@ -19,6 +19,7 @@ export function Topbar() {
     { to: "/chat", label: t("chat"), icon: MessageSquare },
     { to: "/tasks", label: t("tasks"), icon: CheckSquare },
     { to: "/memories", label: t("memories"), icon: Brain },
+    { to: "/guide", label: t("guide"), icon: BookOpen },
     { to: "/settings", label: t("settings"), icon: Settings },
   ] as const;
 
