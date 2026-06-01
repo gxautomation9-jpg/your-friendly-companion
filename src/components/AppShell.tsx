@@ -1,7 +1,7 @@
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
 import { AstraLogo } from "./AstraLogo";
 import { useI18n } from "@/lib/i18n";
-import { Brain, CheckSquare, Globe, Home, MessageSquare, Settings } from "lucide-react";
+import { BookOpen, Brain, CheckSquare, Globe, Home, MessageSquare, Settings } from "lucide-react";
 import { Button } from "./ui/button";
 
 export function AppShell() {
@@ -13,6 +13,7 @@ export function AppShell() {
     { to: "/chat", label: t("chat"), icon: MessageSquare },
     { to: "/tasks", label: t("tasks"), icon: CheckSquare },
     { to: "/memories", label: t("memories"), icon: Brain },
+    { to: "/guide", label: t("guide"), icon: BookOpen },
     { to: "/settings", label: t("settings"), icon: Settings },
   ] as const;
 

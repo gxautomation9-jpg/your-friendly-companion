@@ -18,6 +18,7 @@ import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as AppTasksRouteImport } from './routes/_app.tasks'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppMemoriesRouteImport } from './routes/_app.memories'
+import { Route as AppGuideRouteImport } from './routes/_app.guide'
 import { Route as AppChatRouteImport } from './routes/_app.chat'
 import { Route as ApiPublicAstraConfigRouteImport } from './routes/api/public/astra-config'
 import { Route as AppChatThreadIdRouteImport } from './routes/_app.chat.$threadId'
@@ -66,6 +67,11 @@ const AppMemoriesRoute = AppMemoriesRouteImport.update({
   path: '/memories',
   getParentRoute: () => AppRoute,
 } as any)
+const AppGuideRoute = AppGuideRouteImport.update({
+  id: '/guide',
+  path: '/guide',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppChatRoute = AppChatRouteImport.update({
   id: '/chat',
   path: '/chat',
@@ -87,6 +93,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/gx-control': typeof GxControlRoute
   '/chat': typeof AppChatRouteWithChildren
+  '/guide': typeof AppGuideRoute
   '/memories': typeof AppMemoriesRoute
   '/settings': typeof AppSettingsRoute
   '/tasks': typeof AppTasksRoute
@@ -100,6 +107,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/gx-control': typeof GxControlRoute
   '/chat': typeof AppChatRouteWithChildren
+  '/guide': typeof AppGuideRoute
   '/memories': typeof AppMemoriesRoute
   '/settings': typeof AppSettingsRoute
   '/tasks': typeof AppTasksRoute
@@ -115,6 +123,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/gx-control': typeof GxControlRoute
   '/_app/chat': typeof AppChatRouteWithChildren
+  '/_app/guide': typeof AppGuideRoute
   '/_app/memories': typeof AppMemoriesRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/tasks': typeof AppTasksRoute
@@ -130,6 +139,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/gx-control'
     | '/chat'
+    | '/guide'
     | '/memories'
     | '/settings'
     | '/tasks'
@@ -143,6 +153,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/gx-control'
     | '/chat'
+    | '/guide'
     | '/memories'
     | '/settings'
     | '/tasks'
@@ -157,6 +168,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/gx-control'
     | '/_app/chat'
+    | '/_app/guide'
     | '/_app/memories'
     | '/_app/settings'
     | '/_app/tasks'
@@ -241,6 +253,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppMemoriesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/guide': {
+      id: '/_app/guide'
+      path: '/guide'
+      fullPath: '/guide'
+      preLoaderRoute: typeof AppGuideRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/chat': {
       id: '/_app/chat'
       path: '/chat'
@@ -278,6 +297,7 @@ const AppChatRouteWithChildren =
 
 interface AppRouteChildren {
   AppChatRoute: typeof AppChatRouteWithChildren
+  AppGuideRoute: typeof AppGuideRoute
   AppMemoriesRoute: typeof AppMemoriesRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppTasksRoute: typeof AppTasksRoute
@@ -285,6 +305,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppChatRoute: AppChatRouteWithChildren,
+  AppGuideRoute: AppGuideRoute,
   AppMemoriesRoute: AppMemoriesRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppTasksRoute: AppTasksRoute,
@@ -304,3 +325,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
