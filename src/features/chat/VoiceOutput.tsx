@@ -332,10 +332,17 @@ export function VoiceOutput({
     }
 
     lastActivityRef.current = Date.now();
+    // Give the engine a moment to fully drain the previous utterance.
+    // Chrome has a well-known race where speak() called immediately after
+    // an onend (or after an internal cancel) plays only the first 1–2 words
+    // of the next utterance and then goes silent. A ~220ms gap, combined
+    // with an explicit cancel(), avoids that and produces natural pacing
+    // between sentences.
+    try { window.speechSynthesis.cancel(); } catch { /* noop */ }
     window.setTimeout(() => {
       if (token !== playTokenRef.current || stoppedRef.current || userPausedRef.current) return;
       playSegmentRef.current(token);
-    }, 60);
+    }, 220);
   }, [cleanupCloud, setPlaybackState]);
 
   const playSegment = useCallback((token: number) => {
