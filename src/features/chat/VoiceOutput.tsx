@@ -559,15 +559,6 @@ export function VoiceOutput({
   const playOrResume = () => {
     if (!supported) return;
     if (state === "paused") {
-      if (cloudAudioRef.current) {
-        userPausedRef.current = false;
-        activeRef.current = true;
-        lastActivityRef.current = Date.now();
-        setPlaybackState("playing");
-        cloudAudioRef.current.play().catch(() => undefined);
-        return;
-      }
-
       userPausedRef.current = false;
       activeRef.current = true;
       playTokenRef.current += 1;
@@ -585,8 +576,8 @@ export function VoiceOutput({
     if (!supported) return;
     userPausedRef.current = true;
     activeRef.current = false;
-    if (cloudAudioRef.current && !cloudAudioRef.current.paused) {
-      try { cloudAudioRef.current.pause(); } catch { /* noop */ }
+    if (sourceRef.current === "cloud" || cloudAudioRef.current || cloudAbortRef.current) {
+      cleanupCloud(true);
       setPlaybackState("paused");
       return;
     }
