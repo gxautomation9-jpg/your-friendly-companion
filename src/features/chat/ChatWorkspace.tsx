@@ -135,9 +135,19 @@ export function ChatWorkspace() {
   }, [hydrated]);
 
   // Persist after each change (streaming included — auto-saves the final state too).
+  const executedActionsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!hydrated) return;
     if (status === "streaming" || status === "submitted") return;
+    // Run any Astra action tags on assistant messages we haven't processed yet.
+    for (const m of messages) {
+      if (m.role !== "assistant" || executedActionsRef.current.has(m.id)) continue;
+      const text = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
+      if (text.includes("[[ASTRA_ACTION]]")) {
+        try { executeActionsInText(text); } catch { /* never block */ }
+      }
+      executedActionsRef.current.add(m.id);
+    }
     saveMessages(messages);
   }, [messages, status, hydrated]);
 
@@ -238,7 +248,8 @@ export function ChatWorkspace() {
             ) : (
               <div className="space-y-6">
                 {messages.map((m, idx) => {
-                  const text = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
+                  const rawText = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
+                  const text = m.role === "assistant" ? stripActionTags(rawText) : rawText;
                   const rtl = isRtl(text);
                   let preferLang: "ar" | "en" | undefined;
                   if (m.role === "assistant") {
