@@ -34,29 +34,56 @@ function normalizeSpeechText(text: string) {
 }
 
 function splitForSpeech(text: string) {
-  const sentences = text.match(/[^.!?؟؛。\n]+[.!?؟؛。]?/g) ?? [text];
+  // 1) Break the text on real sentence terminators so we never read the
+  //    end of one sentence together with the start of the next.
+  const sentenceRegex = /[^.!?؟؛。\n]+[.!?؟؛。]?/g;
+  const sentences = (text.match(sentenceRegex) ?? [text])
+    .map((s) => s.trim())
+    .filter(Boolean);
+
   const chunks: string[] = [];
-  let current = "";
-  const flush = () => { if (current.trim()) chunks.push(current.trim()); current = ""; };
-  for (const raw of sentences) {
-    const s = raw.trim();
-    if (!s) continue;
-    if (s.length > MAX_CHUNK_LENGTH) {
-      flush();
-      let partial = "";
-      for (const w of s.split(/\s+/)) {
-        if ((partial + " " + w).trim().length > MAX_CHUNK_LENGTH) {
-          if (partial.trim()) chunks.push(partial.trim());
-          partial = w;
-        } else partial = (partial + " " + w).trim();
-      }
-      if (partial.trim()) chunks.push(partial.trim());
+
+  for (const sentence of sentences) {
+    if (sentence.length <= MAX_CHUNK_LENGTH) {
+      // Each sentence stays its own utterance — preserves natural pauses
+      // and prevents the "ends sentence + reads 2 words of the next" glitch.
+      chunks.push(sentence);
       continue;
     }
-    if ((current + " " + s).trim().length > MAX_CHUNK_LENGTH) flush();
-    current = (current + " " + s).trim();
+
+    // 2) Long sentence: split on clause punctuation (commas, dashes, colons,
+    //    semicolons — including Arabic comma). The terminator stays attached
+    //    to the clause so the engine still pauses naturally.
+    const clauses = sentence
+      .split(/(?<=[,،;:—–])\s+/)
+      .map((c) => c.trim())
+      .filter(Boolean);
+
+    let buf = "";
+    const flush = () => { if (buf.trim()) chunks.push(buf.trim()); buf = ""; };
+
+    for (const clause of clauses) {
+      if (clause.length > MAX_CHUNK_LENGTH) {
+        // 3) Last-resort word split for very long clauses.
+        flush();
+        let partial = "";
+        for (const w of clause.split(/\s+/)) {
+          if ((partial + " " + w).trim().length > MAX_CHUNK_LENGTH) {
+            if (partial.trim()) chunks.push(partial.trim());
+            partial = w;
+          } else {
+            partial = (partial + " " + w).trim();
+          }
+        }
+        if (partial.trim()) chunks.push(partial.trim());
+        continue;
+      }
+      if ((buf + " " + clause).trim().length > MAX_CHUNK_LENGTH) flush();
+      buf = (buf + " " + clause).trim();
+    }
+    flush();
   }
-  flush();
+
   return chunks;
 }
 
