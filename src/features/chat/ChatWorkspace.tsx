@@ -15,6 +15,7 @@ import { VoiceOutput } from "@/features/chat/VoiceOutput";
 import { buildMemoryContext, extractAutoFacts } from "@/lib/astra-memory";
 import { buildTasksContext } from "@/lib/astra-tasks";
 import { ChatRetentionBanner, markFirstMessageIfMissing, resetRetentionClock } from "@/features/chat/ChatRetentionBanner";
+import { executeActionsInText, stripActionTags } from "@/lib/astra-actions";
 
 // Single persistent conversation — no multi-chat sidebar.
 const MESSAGES_KEY = "astra:chat-messages-v1";
