@@ -6,7 +6,7 @@
 //
 // All operations are client-side and resilient (no throws on quota/SSR).
 
-export type MemoryKind = "manual" | "auto";
+export type MemoryKind = "manual" | "auto" | "ai";
 
 export type Memory = {
   id: string;
@@ -98,6 +98,22 @@ export function addAutoMemory(category: string, content: string) {
   const manual = items.filter((x) => x.kind === "manual");
   const auto = [m, ...items.filter((x) => x.kind === "auto")].slice(0, MAX_AUTO);
   persist([...auto, ...manual]);
+}
+
+/**
+ * Memory saved by Astra herself (via chat action tags). Deduped on
+ * (category + lowercased content). Persisted like other entries.
+ */
+export function addAiMemory(category: string, content: string): Memory | null {
+  const c = content.trim();
+  if (!c) return null;
+  const cat = (category || "preference").trim() || "preference";
+  const items = listMemories();
+  const key = `${cat}::${c.toLowerCase()}`;
+  if (items.some((m) => `${m.category}::${m.content.toLowerCase()}` === key)) return null;
+  const m: Memory = { id: uid(), kind: "ai", category: cat, content: c, created_at: new Date().toISOString() };
+  persist([m, ...items]);
+  return m;
 }
 
 /**
