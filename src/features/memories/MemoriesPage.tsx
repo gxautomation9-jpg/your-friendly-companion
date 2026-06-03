@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Brain, Check, Pencil, Plus, Sparkles, Trash2, User, X } from "lucide-react";
+import { Brain, Check, Pencil, Plus, Sparkles, Trash2, User, Wand2, X } from "lucide-react";
 import { addManualMemory, clearAuto, deleteMemory, listMemories, updateMemory, type Memory } from "@/lib/astra-memory";
 
 export function MemoriesPage() {
@@ -82,10 +82,14 @@ export function MemoriesPage() {
           return (
             <div key={m.id} className="flex items-start gap-3 rounded-xl glass p-4">
               <span className={`inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-medium ${
-                m.kind === "auto" ? "bg-electric/15 text-electric" : "bg-primary/15 text-primary"
+                m.kind === "ai"
+                  ? "bg-electric/20 text-electric ring-1 ring-electric/40"
+                  : m.kind === "auto"
+                    ? "bg-electric/15 text-electric"
+                    : "bg-primary/15 text-primary"
               }`}>
-                {m.kind === "auto" ? <Sparkles className="h-3 w-3" /> : <User className="h-3 w-3" />}
-                {isEditing ? null : m.category}
+                {m.kind === "ai" ? <Wand2 className="h-3 w-3" /> : m.kind === "auto" ? <Sparkles className="h-3 w-3" /> : <User className="h-3 w-3" />}
+                {isEditing ? null : (m.kind === "ai" ? (lang === "ar" ? "أسترا" : "Astra") : m.category)}
               </span>
               <div className="min-w-0 flex-1">
                 {isEditing ? (
