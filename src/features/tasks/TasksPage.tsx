@@ -30,6 +30,20 @@ export function TasksPage() {
   useEffect(() => { setItems(listTasks()); }, []);
   const refresh = () => setItems(listTasks());
 
+  useEffect(() => {
+    const onUpdate = () => refresh();
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key || event.key === "astra:tasks-v1") refresh();
+    };
+
+    window.addEventListener("astra:tasks-updated", onUpdate);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("astra:tasks-updated", onUpdate);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
   const add = () => {
     if (!title.trim()) return;
     addTaskStore({ title, description: desc, priority });

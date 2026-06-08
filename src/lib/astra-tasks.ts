@@ -44,7 +44,12 @@ export function listTasks(): Task[] {
 
 function persist(items: Task[]) {
   if (typeof window === "undefined") return;
-  try { localStorage.setItem(KEY, JSON.stringify(items)); } catch { /* quota */ }
+  try {
+    localStorage.setItem(KEY, JSON.stringify(items));
+    window.dispatchEvent(new Event("astra:tasks-updated"));
+  } catch {
+    /* quota */
+  }
 }
 
 export function saveTasks(items: Task[]) { persist(items); }
@@ -81,7 +86,10 @@ export function deleteTask(id: string) {
 }
 
 export function clearAllTasks() {
-  if (typeof window !== "undefined") localStorage.removeItem(KEY);
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(KEY);
+    window.dispatchEvent(new Event("astra:tasks-updated"));
+  }
 }
 
 // Build a compact tasks block for the AI system prompt.

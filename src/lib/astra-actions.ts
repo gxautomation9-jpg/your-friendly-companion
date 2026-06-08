@@ -27,13 +27,21 @@ export function stripActionTags(text: string): string {
 
 type ActionResult = { ok: boolean; type: string; note?: string };
 
-function findTaskByMatch(match: string) {
-  if (!match) return null;
+function findTasksByMatch(match: string) {
+  if (!match) return [];
   const items = listTasks();
-  const byId = items.find((t) => t.id === match);
-  if (byId) return byId;
-  const m = match.toLowerCase();
-  return items.find((t) => t.title.toLowerCase().includes(m)) ?? null;
+  const byId = items.filter((t) => t.id === match);
+  if (byId.length) return byId;
+  const m = match.trim().toLowerCase();
+  const exact = items.filter((t) => t.title.trim().toLowerCase() === m);
+  if (exact.length) return exact;
+  const startsWith = items.filter((t) => t.title.trim().toLowerCase().startsWith(m));
+  if (startsWith.length) return startsWith;
+  return items.filter((t) => t.title.toLowerCase().includes(m));
+}
+
+function findTaskByMatch(match: string) {
+  return findTasksByMatch(match)[0] ?? null;
 }
 
 function normalizePriority(p: unknown): Priority | undefined {
@@ -48,9 +56,16 @@ function runOne(action: { type?: string } & Record<string, unknown>): ActionResu
       case "task.add": {
         const title = String(action.title || "").trim();
         if (!title) return { ok: false, type, note: "missing title" };
+        const description = typeof action.description === "string" ? action.description.trim() : "";
+        const duplicate = listTasks().find((task) =>
+          task.status === "todo"
+          && task.title.trim().toLowerCase() === title.toLowerCase()
+          && (task.description ?? "").trim().toLowerCase() === description.toLowerCase(),
+        );
+        if (duplicate) return { ok: true, type, note: "duplicate skipped" };
         addTask({
           title,
-          description: typeof action.description === "string" ? action.description : null,
+          description: description || null,
           priority: normalizePriority(action.priority) ?? "medium",
         });
         return { ok: true, type };
@@ -74,9 +89,9 @@ function runOne(action: { type?: string } & Record<string, unknown>): ActionResu
         return { ok: true, type };
       }
       case "task.delete": {
-        const target = findTaskByMatch(String(action.match || ""));
-        if (!target) return { ok: false, type, note: "task not found" };
-        deleteTask(target.id);
+        const targets = findTasksByMatch(String(action.match || action.title || ""));
+        if (targets.length === 0) return { ok: false, type, note: "task not found" };
+        for (const target of targets) deleteTask(target.id);
         return { ok: true, type };
       }
       case "memory.save": {

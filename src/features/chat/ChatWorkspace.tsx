@@ -20,6 +20,7 @@ import { executeActionsInText, stripActionTags } from "@/lib/astra-actions";
 // Single persistent conversation — no multi-chat sidebar.
 const MESSAGES_KEY = "astra:chat-messages-v1";
 const FORCED_LANG_KEY = "astra:forced-lang";
+const EXECUTED_ACTIONS_KEY = "astra:executed-action-messages-v1";
 
 function isRtl(text: string) {
   return /[\u0600-\u06FF]/.test(text);
@@ -39,6 +40,26 @@ function saveMessages(messages: UIMessage[]) {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(MESSAGES_KEY, JSON.stringify(messages));
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadExecutedActionIds(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(EXECUTED_ACTIONS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveExecutedActionIds(ids: Iterable<string>) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(EXECUTED_ACTIONS_KEY, JSON.stringify(Array.from(ids)));
   } catch {
     /* ignore */
   }
@@ -76,6 +97,7 @@ export function ChatWorkspace() {
 
   useEffect(() => {
     setInitialMessages(loadMessages());
+    executedActionsRef.current = new Set(loadExecutedActionIds());
     const v = localStorage.getItem(FORCED_LANG_KEY);
     if (v === "ar" || v === "en") setForcedLang(v);
     setHydrated(true);
@@ -139,16 +161,23 @@ export function ChatWorkspace() {
   useEffect(() => {
     if (!hydrated) return;
     if (status === "streaming" || status === "submitted") return;
+    let didProcessNewAction = false;
     // Run any Astra action tags on assistant messages we haven't processed yet.
     for (const m of messages) {
       if (m.role !== "assistant" || executedActionsRef.current.has(m.id)) continue;
       const text = m.parts.map((p) => (p.type === "text" ? p.text : "")).join("");
       if (text.includes("[[ASTRA_ACTION]]")) {
         try { executeActionsInText(text); } catch { /* never block */ }
+        didProcessNewAction = true;
       }
       executedActionsRef.current.add(m.id);
     }
+    saveExecutedActionIds(executedActionsRef.current);
     saveMessages(messages);
+    if (didProcessNewAction) {
+      window.dispatchEvent(new Event("astra:tasks-updated"));
+      window.dispatchEvent(new Event("astra:memories-updated"));
+    }
   }, [messages, status, hydrated]);
 
   const [input, setInput] = useState("");
@@ -181,6 +210,8 @@ export function ChatWorkspace() {
     if (typeof window !== "undefined" && !confirm(lang === "ar" ? "هل أنت متأكد من مسح المحادثة؟" : "Clear the conversation?")) return;
     setMessages([]);
     saveMessages([]);
+    executedActionsRef.current.clear();
+    saveExecutedActionIds([]);
     resetRetentionClock();
   };
 
@@ -221,6 +252,7 @@ export function ChatWorkspace() {
           getMessages={() => messages}
           onPurge={() => {
             setMessages([]); saveMessages([]);
+            executedActionsRef.current.clear(); saveExecutedActionIds([]);
             // Admin retention policy wipes ALL local user data, not just chat.
             import("@/lib/astra-tasks").then((m) => m.clearAllTasks());
             import("@/lib/astra-memory").then((m) => m.clearAll());
